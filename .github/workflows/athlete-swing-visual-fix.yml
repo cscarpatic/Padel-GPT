@@ -1,0 +1,44 @@
+name: Validated athlete swing update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/athlete-swing-visual-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Apply patch
+        run: python3 .github/scripts/athlete_swing_patch.py
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate
+        run: npm run check
+      - name: Verify visual controls
+        run: |
+          grep -q 'handPivots\[1\].add(racket)' src/athlete.js
+          grep -q 'function showImpactFX' src/main.js
+          grep -q 'player.prep = 1' src/main.js
+          grep -q 'actor.swing - dt \* 3.15' src/main.js
+          grep -q 'position:fixed;right:var(--safe-right);bottom:var(--safe-bottom)' src/style.css
+      - name: Commit validated update
+        run: |
+          git config user.name 'cscarpatic'
+          git config user.email '146448687+cscarpatic@users.noreply.github.com'
+          git add src/main.js src/athlete.js src/style.css
+          git commit -m 'Improve racket contact animation and HIT layout'
+          git push origin main
