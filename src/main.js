@@ -7,6 +7,7 @@ import { MatchScore } from './scoring.js';
 import { computeSafeRallyVelocity } from './physics.js';
 import { createAthlete } from './athlete.js';
 import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';
+import { addSeasideArena, createGameplayGuides, updateGameplayGuides, computeGameplayCamera } from './presentation.js';
 import './style.css';
 
 const $ = (selector) => document.querySelector(selector);
@@ -106,6 +107,8 @@ let gamepadPauseWasDown = false;
 let gamepadCameraWasDown = false;
 let touchVector = { x: 0, z: 0 };
 let stats = { currentRally: 0, maxRally: 0, maxSpeed: 0 };
+let gameplayGuides = null;
+let hitBuffer = 0;
 
 const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: PLAYER_TUNING.speed, group: null, racket: null, swing: 0 };
 const ai = { pos: new THREE.Vector3(0, 0, -7.8), vel: new THREE.Vector3(), speed: 5.25, group: null, racket: null, swing: 0 };
@@ -201,33 +204,33 @@ function makeCanvasTexture(draw, size = 512) {
 function addCourt() {
   const skyMaterial = new THREE.ShaderMaterial({
     side: THREE.BackSide,
-    uniforms: { top: { value: new THREE.Color(0x1b5868) }, bottom: { value: new THREE.Color(0x020608) } },
+    uniforms: { top: { value: new THREE.Color(0x82d5ff) }, bottom: { value: new THREE.Color(0xeaf8ff) } },
     vertexShader: 'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
     fragmentShader: 'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){float h=normalize(v).y*.5+.5;gl_FragColor=vec4(mix(bottom,top,pow(h,1.45)),1.);}'
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(95, 32, 18), skyMaterial));
 
   const turf = makeCanvasTexture((ctx, s) => {
-    ctx.fillStyle = '#185560'; ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#1267ee'; ctx.fillRect(0, 0, s, s);
     for (let i = 0; i < 7000; i += 1) {
       const a = 0.04 + Math.random() * 0.13;
-      ctx.fillStyle = `rgba(${20 + Math.random() * 25},${95 + Math.random() * 40},${105 + Math.random() * 40},${a})`;
+      ctx.fillStyle = `rgba(${22 + Math.random() * 18},${92 + Math.random() * 28},${225 + Math.random() * 30},${a})`;
       ctx.fillRect(Math.random() * s, Math.random() * s, 1, 1 + Math.random() * 2);
     }
     for (let y = 0; y < s; y += 64) {
-      ctx.fillStyle = 'rgba(255,255,255,.018)'; ctx.fillRect(0, y, s, 32);
+      ctx.fillStyle = 'rgba(255,255,255,.048)'; ctx.fillRect(0, y, s, 32);
     }
   }, 1024);
   turf.wrapS = turf.wrapT = THREE.RepeatWrapping; turf.repeat.set(2, 4);
 
-  const arenaGround = new THREE.Mesh(new THREE.CircleGeometry(58, 64), mat(0x030709, 1));
+  const arenaGround = new THREE.Mesh(new THREE.CircleGeometry(58, 64), mat(0xd7ecf8, 1));
   arenaGround.rotation.x = -Math.PI / 2; arenaGround.position.y = -0.38; arenaGround.receiveShadow = true; scene.add(arenaGround);
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.28, 22.7), mat(0x0a1518, 0.72, 0.08));
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.28, 22.7), mat(0xf4f9fc, 0.72, 0.03));
   slab.position.y = -0.2; slab.receiveShadow = true; scene.add(slab);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 20), new THREE.MeshStandardMaterial({ map: turf, roughness: 0.82 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 20), new THREE.MeshStandardMaterial({ map: turf, roughness: 0.72 }));
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xeaf4f4, toneMapped: false });
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   const line = (w, l, x, z) => {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, l), lineMat);
     mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, 0.008, z); scene.add(mesh);
@@ -239,18 +242,18 @@ function addCourt() {
   line(0.05, COURT.serviceLine + 0.2, 0, -(COURT.serviceLine + 0.2) / 2);
 
   const glassMat = new THREE.MeshPhysicalMaterial({
-    color: 0x9ad8df, transparent: true, opacity: 0.2, roughness: 0.07, transmission: 0.72,
+    color: 0xc9efff, transparent: true, opacity: 0.18, roughness: 0.07, transmission: 0.82,
     thickness: 0.08, side: THREE.DoubleSide, metalness: 0
   });
   const fenceTex = makeCanvasTexture((ctx, s) => {
-    ctx.clearRect(0, 0, s, s); ctx.strokeStyle = 'rgba(176,202,205,.48)'; ctx.lineWidth = 2;
+    ctx.clearRect(0, 0, s, s); ctx.strokeStyle = 'rgba(61,104,186,.38)'; ctx.lineWidth = 2;
     for (let i = 0; i <= s; i += 26) {
       ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, s); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(s, i); ctx.stroke();
     }
   });
   fenceTex.wrapS = fenceTex.wrapT = THREE.RepeatWrapping; fenceTex.repeat.set(2, 1);
-  const fenceMat = new THREE.MeshStandardMaterial({ map: fenceTex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, color: 0x839397, roughness: 0.75, metalness: 0.35 });
+  const fenceMat = new THREE.MeshStandardMaterial({ map: fenceTex, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, color: 0x4775cb, roughness: 0.75, metalness: 0.35 });
   const panel = (w, h, x, y, z, ry, material) => {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
     mesh.position.set(x, y, z); mesh.rotation.y = ry; mesh.receiveShadow = true; scene.add(mesh); return mesh;
@@ -264,7 +267,7 @@ function addCourt() {
     panel(20, 1, x, 3.5, 0, Math.PI / 2, fenceMat);
   }
 
-  const frameMat = mat(0x172326, 0.28, 0.82);
+  const frameMat = mat(0x2464d7, 0.22, 0.56);
   const beam = (sx, sy, sz, x, y, z) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), frameMat);
     mesh.position.set(x, y, z); mesh.castShadow = true; scene.add(mesh); return mesh;
@@ -286,7 +289,7 @@ function addCourt() {
   net.position.set(0, COURT.netH / 2, 0); net.castShadow = true; scene.add(net);
   beam(0.1, 1.05, 0.1, -5, 0.52, 0); beam(0.1, 1.05, 0.1, 5, 0.52, 0); beam(10.1, 0.05, 0.05, 0, 0.91, 0);
 
-  const standMatA = mat(0x0d1518, 0.95); const standMatB = mat(0x121d20, 0.95);
+  const standMatA = mat(0x1759dd, 0.52, 0.08); const standMatB = mat(0xf1f7fb, 0.78, 0.02);
   for (const side of [-1, 1]) {
     for (let row = 0; row < 7; row += 1) {
       const z = side * (12.7 + row * 0.75); const h = 0.25 + row * 0.36;
@@ -297,7 +300,7 @@ function addCourt() {
 
   const spectatorCount = QUALITY[resolvedQuality()].spectators;
   const spectatorGeometry = new THREE.SphereGeometry(0.12, 7, 5);
-  const spectatorMaterial = mat(0x708085, 0.9);
+  const spectatorMaterial = mat(0xbac8d2, 0.88);
   const spectators = new THREE.InstancedMesh(spectatorGeometry, spectatorMaterial, spectatorCount);
   const dummy = new THREE.Object3D();
   for (let i = 0; i < spectatorCount; i += 1) {
@@ -308,14 +311,14 @@ function addCourt() {
   }
   scene.add(spectators);
 
-  scene.add(new THREE.HemisphereLight(0x9cdceb, 0x071114, 1.35));
-  keyLight = new THREE.DirectionalLight(0xe8fbff, 2.55); keyLight.position.set(-8, 16, 7); keyLight.castShadow = true;
+  scene.add(new THREE.HemisphereLight(0xdaf5ff, 0xd5e6ef, 1.78));
+  keyLight = new THREE.DirectionalLight(0xffffff, 2.85); keyLight.position.set(-8, 16, 7); keyLight.castShadow = true;
   keyLight.shadow.camera.left = -14; keyLight.shadow.camera.right = 14; keyLight.shadow.camera.top = 18; keyLight.shadow.camera.bottom = -18;
   scene.add(keyLight);
   [[-8, 8, -13], [8, 8, -13], [-8, 8, 13], [8, 8, 13]].forEach(([x, y, z], index) => {
     const spot = new THREE.SpotLight(index < 2 ? 0xbfeaff : 0xffffff, 78, 38, Math.PI / 5, 0.45, 1.1);
     spot.position.set(x, y, z); spot.target.position.set(0, 0, 0); spot.castShadow = index === 0; scene.add(spot, spot.target);
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(2, 0.15, 0.5), new THREE.MeshBasicMaterial({ color: 0xc9f5ff, toneMapped: false }));
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(2, 0.15, 0.5), new THREE.MeshBasicMaterial({ color: 0xf8fdff, toneMapped: false }));
     lamp.position.set(x, y, z); lamp.lookAt(0, 0, 0); scene.add(lamp);
   });
 }
@@ -331,25 +334,25 @@ function makeBall() {
     ctx.beginPath(); ctx.arc(s * 0.8, s * 0.5, s * 0.46, 1.94, 4.34); ctx.stroke();
   });
   ball.mesh = new THREE.Mesh(new THREE.SphereGeometry(ball.radius, 26, 20), new THREE.MeshStandardMaterial({ map: texture, roughness: 0.56, emissive: 0x314500, emissiveIntensity: 0.14 }));
-  ball.mesh.castShadow = true; scene.add(ball.mesh);
-  const trailMat = new THREE.MeshBasicMaterial({ color: 0xeaff76, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending });
+  ball.mesh.castShadow = true; ball.mesh.scale.setScalar(1.12); scene.add(ball.mesh);
+  const trailMat = new THREE.MeshBasicMaterial({ color: 0xeaff76, transparent: true, opacity: 0.36, depthWrite: false, blending: THREE.AdditiveBlending });
   for (let i = 0; i < 12; i += 1) {
     const scale = Math.max(0.24, 0.92 - i * 0.055);
     const t = new THREE.Mesh(new THREE.SphereGeometry(ball.radius * scale, 12, 9), trailMat.clone());
-    t.material.opacity = Math.max(0.02, 0.3 - i * 0.022); scene.add(t); ball.trail.push(t);
+    t.material.opacity = Math.max(0.025, 0.36 - i * 0.024); scene.add(t); ball.trail.push(t);
   }
 }
 
 function initRenderer() {
   try {
-    scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x07151a, 0.017);
+    scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0xd8f1fb, 0.0105);
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', alpha: false });
   } catch (error) {
     console.error(error); boot.classList.add('hidden'); unsupported.classList.remove('hidden'); return false;
   }
   renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.04;
-  camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 180); camera.position.set(10, 7, 14);
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
+  camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 180); camera.position.set(5.5, 8.2, 16.5);
   composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
   bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.5, 0.92); composer.addPass(bloomPass); composer.addPass(new OutputPass());
   applyQuality(); return true;
@@ -478,9 +481,9 @@ function prepareAfterHit(hitter) {
 }
 
 function playerHit() {
-  if (appMode !== 'playing' || pointLocked) return;
-  if (serveReady && getServer() === 'player') { beginServe('player'); return; }
-  if (!rallyLive || serviceActive && serviceReceiver === 'player') return;
+  if (appMode !== 'playing' || pointLocked) return false;
+  if (serveReady && getServer() === 'player') { beginServe('player'); return true; }
+  if (!rallyLive || serviceActive && serviceReceiver === 'player') return false;
   const distance = horizontalBallDistance(player);
   if (ball.pos.z > 0 && distance < PLAYER_TUNING.hitReach && ball.pos.y < PLAYER_TUNING.maxHitHeight) {
     const xIntent = getMoveX(); const zIntent = getMoveZ(); const smash = ball.pos.y > 1.55 ? 1 : 0; const lob = zIntent > 0.45 ? 1 : 0;
@@ -488,7 +491,9 @@ function playerHit() {
     launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 10.2 + power * 5.2 + smash * 2.7 - lob * 1.2, 2.4 + power * 1.8 + smash * 1.0 + lob * 2.5, 'player');
     prepareAfterHit('player'); player.swing = 1; shake = reducedMotion ? 0 : 0.14; sound.tone('hit', 1.12); statusEl.textContent = smash ? 'SMASH' : lob ? 'LOB' : 'RALLY';
     navigator.vibrate?.(18);
+    return true;
   }
+  return false;
 }
 
 function aiHit() {
@@ -741,7 +746,7 @@ function updateTrail(active) {
   for (let i = 0; i < ball.trail.length; i += 1) {
     const t = ball.trail[i];
     t.visible = active && !reducedMotion;
-    if (t.material) t.material.opacity = active ? Math.max(0.02, 0.3 - i * 0.022) : 0;
+    if (t.material) t.material.opacity = active ? Math.max(0.025, 0.36 - i * 0.024) : 0;
   }
 }
 
@@ -774,10 +779,8 @@ function updateCamera(dt) {
   if (appMode === 'menu' || appMode === 'boot' || appMode === 'ended') {
     menuOrbit += dt * 0.13; const desired = new THREE.Vector3(Math.sin(menuOrbit) * 15, 7.7, Math.cos(menuOrbit) * 18); camera.position.lerp(desired, 1 - Math.exp(-1.6 * dt)); camera.lookAt(0, 1.1, 0); return;
   }
-  let desired; let look;
-  if (cameraMode === 0) { desired = new THREE.Vector3(player.pos.x * 0.22, 5.2, player.pos.z + 7.5); look = new THREE.Vector3(ball.pos.x * 0.24, 1.15, ball.pos.z * 0.42); }
-  else if (cameraMode === 1) { desired = new THREE.Vector3(11.8, 8.5, 12.5); look = new THREE.Vector3(0, 1, 0); }
-  else { desired = new THREE.Vector3(0, 16.5, 9.5); look = new THREE.Vector3(0, 0, 0); }
+  const shot = computeGameplayCamera({ THREE, cameraMode, player, ball });
+  const { desired, look } = shot;
   camera.position.lerp(desired, 1 - Math.exp(-5 * dt));
   if (shake > 0) { shake = Math.max(0, shake - dt); camera.position.x += (Math.random() - 0.5) * shake * 0.45; camera.position.y += (Math.random() - 0.5) * shake * 0.22; }
   const currentLook = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).add(camera.position); currentLook.lerp(look, 1 - Math.exp(-7 * dt)); camera.lookAt(currentLook);
@@ -795,7 +798,9 @@ function animate() {
   pollGamepad();
   if (appMode === 'playing') {
     power += powerDir * dt * 0.58; if (power > 1) { power = 1; powerDir = -1; } if (power < 0.12) { power = 0.12; powerDir = 1; } $('#power i').style.height = `${power * 100}%`;
+    if (hitBuffer > 0) { hitBuffer = Math.max(0, hitBuffer - dt); if (playerHit()) hitBuffer = 0; }
     updatePlayer(dt); updateAI(dt); updateBall(dt);
+    updateGameplayGuides({ THREE, guides: gameplayGuides, player, ai, ball, rallyLive, hitReach: PLAYER_TUNING.hitReach, maxHitHeight: PLAYER_TUNING.maxHitHeight, court: COURT, now: performance.now(), dt });
   }
   updateCamera(dt); composer.render();
 }
@@ -852,7 +857,7 @@ stick.addEventListener('pointerdown' , (event) => { pointerId = event.pointerId;
   stick.addEventListener('pointermove', (event) => { if (event.pointerId === pointerId) updateStick(event); });
   const clearStick = (event) => { if (pointerId !== null && (!event || event.pointerId === pointerId)) { pointerId = null; touchVector.x = touchVector.z = 0; knob.style.transform = 'translate(0,0)'; } };
   stick.addEventListener('pointerup', clearStick); stick.addEventListener('pointercancel', clearStick);
-  $('#touchHit').addEventListener('pointerdown', (event) => { event.preventDefault(); playerHit(); });
+  $('#touchHit').addEventListener('pointerdown', (event) => { event.preventDefault(); hitBuffer = 0.32; if (playerHit()) hitBuffer = 0; });
 
   window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; $('#installApp').classList.remove('hidden'); });
   $('#installApp').addEventListener('click', async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $('#installApp').classList.add('hidden'); });
@@ -866,10 +871,10 @@ async function registerServiceWorker() {
 async function bootApp() {
   bootStatus.textContent = 'Inizializzazione WebGL…';
   if (!initRenderer()) return;
-  bootStatus.textContent = 'Costruzione arena…'; addCourt();
-  player.group = makePlayer(0xd9ff56, false); player.racket = player.group.userData.racket; player.group.position.copy(player.pos);
-  ai.group = makePlayer(0xff654f, true); ai.racket = ai.group.userData.racket; ai.group.position.copy(ai.pos); ai.group.rotation.y = Math.PI;
-  makeBall(); ball.pos.set(0, 1, 0); ball.mesh.position.copy(ball.pos); updateTrail(false); applyQuality(); setupEvents(); updateScoreUI();
+  bootStatus.textContent = 'Costruzione arena…'; addCourt(); addSeasideArena({ THREE, scene, mat });
+  player.group = makePlayer(0x30282b, false); player.racket = player.group.userData.racket; player.group.position.copy(player.pos);
+  ai.group = makePlayer(0x263b5f, true); ai.racket = ai.group.userData.racket; ai.group.position.copy(ai.pos); ai.group.rotation.y = Math.PI;
+  makeBall(); gameplayGuides = createGameplayGuides({ THREE, scene }); ball.pos.set(0, 1, 0); ball.mesh.position.copy(ball.pos); updateTrail(false); applyQuality(); setupEvents(); updateScoreUI();
   bootStatus.textContent = 'Arena pronta'; await new Promise((resolve) => setTimeout(resolve, 360)); boot.style.opacity = '0'; await new Promise((resolve) => setTimeout(resolve, 600)); boot.classList.add('hidden');
   menu.classList.remove('hidden'); appMode = 'menu'; animate(); registerServiceWorker();
 }
