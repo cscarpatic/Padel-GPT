@@ -1,4 +1,4 @@
-# GitHub Pages deployment workflow
+# GitHub Pages deployment workflow — serve physics redeploy
 name: Deploy PADEL NOVA to GitHub Pages
 
 on:
