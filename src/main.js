@@ -345,16 +345,16 @@ function makeBall() {
 
 function initRenderer() {
   try {
-    scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0xd8f1fb, 0.0105);
+    scene = new THREE.Scene(); scene.fog = null;
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', alpha: false });
   } catch (error) {
     console.error(error); boot.classList.add('hidden'); unsupported.classList.remove('hidden'); return false;
   }
   renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.94;
   camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 180); camera.position.set(5.5, 8.2, 16.5);
   composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.5, 0.92); composer.addPass(bloomPass); composer.addPass(new OutputPass());
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.14, 0.28, 0.94); composer.addPass(bloomPass); composer.addPass(new OutputPass());
   applyQuality(); return true;
 }
 
@@ -809,8 +809,23 @@ function resizeRenderer() {
   if (!renderer || !camera || !composer) return; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight);
 }
 
+async function enterImmersiveMode() {
+  try {
+    if (!document.fullscreenElement) {
+      const target = document.documentElement;
+      const request = target.requestFullscreen || target.webkitRequestFullscreen;
+      if (request) await request.call(target);
+    }
+  } catch (error) {
+    console.debug('Fullscreen non disponibile su questo browser:', error);
+  }
+  try { await screen.orientation?.lock?.('landscape'); } catch {}
+  setTimeout(() => window.scrollTo(0, 1), 60);
+}
+
 function toggleFullscreen() {
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.();
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else enterImmersiveMode();
 }
 
 function setupEvents() {
@@ -827,7 +842,18 @@ function setupEvents() {
   addEventListener('blur', () => { keys.clear(); if (appMode === 'playing') pauseGame(true); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && appMode === 'playing') pauseGame(true); });
 
-  $('#startGame').addEventListener('click', startMatch); $('#howToPlay').addEventListener('click', () => tutorial.classList.remove('hidden'));
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (event) => {
+    const now = Date.now();
+    if (now - lastTouchEnd < 320) event.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+  document.addEventListener('gesturestart', (event) => event.preventDefault(), { passive: false });
+  document.addEventListener('gesturechange', (event) => event.preventDefault(), { passive: false });
+  document.addEventListener('gestureend', (event) => event.preventDefault(), { passive: false });
+  document.addEventListener('dblclick', (event) => event.preventDefault(), { passive: false });
+
+  $('#startGame').addEventListener('click', () => { enterImmersiveMode(); startMatch(); }); $('#howToPlay').addEventListener('click', () => tutorial.classList.remove('hidden'));
   $('[data-close="tutorial"]').addEventListener('click', () => tutorial.classList.add('hidden'));
   $('#pauseButton').addEventListener('click', () => pauseGame(true)); $('#resumeGame').addEventListener('click', () => pauseGame(false)); $('#restartGame').addEventListener('click', restartMatch);
   $('#backToMenu').addEventListener('click', showMenu); $('#endToMenu').addEventListener('click', showMenu); $('#playAgain').addEventListener('click', startMatch);
