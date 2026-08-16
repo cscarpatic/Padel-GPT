@@ -456,17 +456,18 @@ function updateServeAnimation(dt) {
 }
 
 function launchService(target, hitter) {
+  const cpuServe = hitter === 'ai';
   const { velocity } = computeSafeRallyVelocity({
     start: ball.pos,
     target,
-    horizontalSpeed: hitter === 'ai' ? 13.2 : 13.8,
-    liftHint: 4.1,
+    horizontalSpeed: cpuServe ? 18.0 : 13.8,
+    liftHint: cpuServe ? 2.35 : 4.1,
     netHeight: COURT.netH,
     ballRadius: ball.radius,
-    clearanceMargin: 0.1
+    clearanceMargin: cpuServe ? 0.025 : 0.1
   });
   ball.vel.set(velocity.x, velocity.y, velocity.z);
-  ball.spin.set(0, 0, -ball.vel.x * 0.16);
+  ball.spin.set(0, 0, -ball.vel.x * (cpuServe ? 0.08 : 0.16));
   recordShotSpeed();
 }
 
