@@ -1,0 +1,15 @@
+{
+  "name": "PADEL//NOVA",
+  "short_name": "PADEL NOVA",
+  "description": "Esperienza di padel 3D real-time nel browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05090b",
+  "theme_color": "#071014",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

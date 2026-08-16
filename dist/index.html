@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#071014" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="PADEL//NOVA — esperienza di padel 3D real-time nel browser." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="PADEL//NOVA — 3D Padel" />
+  <meta property="og:description" content="Padel 3D real-time, fisica, vetri, IA e atmosfera da arena." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>PADEL//NOVA — 3D Padel</title>
+  <script type="module" crossorigin src="/Padel-GPT/assets/index-BmZ3CCBo.js"></script>
+  <link rel="stylesheet" crossorigin href="/Padel-GPT/assets/index-1WjkyDkK.css">
+</head>
+<body>
+  <noscript>PADEL//NOVA richiede JavaScript e WebGL.</noscript>
+
+  <div id="boot" class="screen screen--boot" aria-live="polite">
+    <div class="boot-card">
+      <div class="logo">PADEL<span>//</span>NOVA</div>
+      <p>PREPARAZIONE ARENA</p>
+      <div class="loader" aria-hidden="true"><i></i></div>
+      <small id="bootStatus">Caricamento motore 3D…</small>
+    </div>
+  </div>
+
+  <canvas id="game" aria-label="Campo da padel 3D"></canvas>
+
+  <main id="menu" class="screen screen--menu hidden" aria-label="Menu principale">
+    <section class="hero-panel">
+      <div class="eyebrow">REAL-TIME 3D PADEL</div>
+      <h1>PADEL<span>//</span>NOVA</h1>
+      <p class="lead">Entra in un’arena notturna, domina vetri e rimbalzi, porta il set al tie-break.</p>
+
+      <div class="menu-grid">
+        <label class="select-card">
+          <span>Difficoltà</span>
+          <select id="difficulty">
+  <option value="beginner" selected>Beginner</option>
+  <option value="rookie">Rookie</option>
+  <option value="pro">Pro</option>
+  <option value="elite">Elite</option>
+</select>
+        </label>
+        <label class="select-card">
+          <span>Qualità</span>
+          <select id="quality">
+            <option value="auto" selected>Auto</option>
+            <option value="low">Performance</option>
+            <option value="medium">Bilanciata</option>
+            <option value="high">Ultra</option>
+          </select>
+        </label>
+      </div>
+
+      <button id="startGame" class="primary">INIZIA IL MATCH <span>→</span></button>
+      <div class="menu-actions">
+        <button id="howToPlay" class="ghost">Come si gioca</button>
+        <button id="installApp" class="ghost hidden">Installa app</button>
+      </div>
+      <p class="compat" id="compatibility">WebGL · tastiera · touch · gamepad</p>
+    </section>
+  </main>
+
+  <section id="tutorial" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+    <div class="modal-card">
+      <button class="icon-button modal-close" data-close="tutorial" aria-label="Chiudi">×</button>
+      <div class="eyebrow">CONTROL ROOM</div>
+      <h2 id="tutorialTitle">Come si gioca</h2>
+      <div class="control-list">
+        <div><kbd>WASD</kbd><span>Movimento</span></div>
+        <div><kbd>SPACE</kbd><span>Servizio / colpo</span></div>
+        <div><kbd>SHIFT</kbd><span>Sprint</span></div>
+        <div><kbd>C</kbd><span>Cambia camera</span></div>
+        <div><kbd>P / ESC</kbd><span>Pausa</span></div>
+        <div><kbd>F</kbd><span>Schermo intero</span></div>
+      </div>
+      <p>Nel servizio la palla rimbalza prima del colpo e viene indirizzata in diagonale. Durante lo scambio puoi usare i vetri dopo il primo rimbalzo.</p>
+    </div>
+  </section>
+
+  <div id="hud" class="hidden" aria-live="polite">
+    <div class="brand">PADEL<span>//</span>NOVA</div>
+    <div class="scoreboard">
+      <div class="team"><small>TU</small><b id="playerScore">0</b></div>
+      <div class="set"><span id="gamesScore">0 — 0</span><small id="setLabel">SET 1</small></div>
+      <div class="team cpu"><small>CPU</small><b id="aiScore">0</b></div>
+    </div>
+    <div class="status" id="status">SERVIZIO</div>
+    <div id="rallyCounter" class="rally hidden">RALLY <b>0</b></div>
+    <div class="hud-actions">
+      <button id="soundButton" class="icon-button" aria-label="Audio">♪</button>
+      <button id="fullscreenButton" class="icon-button" aria-label="Schermo intero">⛶</button>
+      <button id="pauseButton" class="icon-button" aria-label="Pausa">Ⅱ</button>
+    </div>
+  </div>
+
+  <div id="tips" class="hidden" aria-hidden="true">
+    <span><kbd>WASD</kbd> movimento</span>
+    <span><kbd>SPACE</kbd> colpo</span>
+    <span><kbd>SHIFT</kbd> sprint</span>
+    <span><kbd>C</kbd> camera</span>
+  </div>
+
+  <div id="power" class="hidden" aria-label="Potenza del colpo"><i></i><span>POWER</span></div>
+  <div id="message" aria-live="assertive"></div>
+  <div id="speed" class="hidden"><span>0</span><small>KM/H</small></div>
+
+  <div id="touch" class="hidden">
+    <div class="stick" id="touchStick" aria-label="Movimento">
+      <i></i>
+    </div>
+    <button id="touchHit">HIT</button>
+  </div>
+
+  <section id="pauseMenu" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+    <div class="modal-card compact">
+      <div class="eyebrow">MATCH SOSPESO</div>
+      <h2 id="pauseTitle">Pausa</h2>
+      <button id="resumeGame" class="primary">RIPRENDI</button>
+      <button id="restartGame" class="ghost wide">Ricomincia match</button>
+      <button id="backToMenu" class="ghost wide">Menu principale</button>
+    </div>
+  </section>
+
+  <section id="matchEnd" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="matchEndTitle">
+    <div class="modal-card result-card">
+      <div class="eyebrow">SET COMPLETATO</div>
+      <h2 id="matchEndTitle">VITTORIA</h2>
+      <div id="finalScore" class="final-score">6 — 4</div>
+      <div class="stats-grid">
+        <div><b id="statRally">0</b><span>Rally max</span></div>
+        <div><b id="statSpeed">0</b><span>Velocità max</span></div>
+        <div><b id="statPoints">0</b><span>Punti giocati</span></div>
+      </div>
+      <button id="playAgain" class="primary">GIOCA ANCORA</button>
+      <button id="endToMenu" class="ghost wide">Menu principale</button>
+    </div>
+  </section>
+
+  <div id="orientationHint" class="orientation-hint hidden">Ruota il dispositivo in orizzontale per un’esperienza migliore.</div>
+  <div id="unsupported" class="screen hidden"><div class="error-card"><h1>WebGL non disponibile</h1><p>Apri PADEL//NOVA con un browser moderno e accelerazione hardware attiva.</p></div></div>
+
+</body>
+</html>

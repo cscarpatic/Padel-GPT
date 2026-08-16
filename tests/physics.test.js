@@ -9,9 +9,10 @@ const HALF_W = 5;
 const HALF_L = 10;
 
 const DIFFICULTY = {
-  rookie: { power: 0.82, accuracy: 2.5 },
-  pro: { power: 0.94, accuracy: 1.5 },
-  elite: { power: 1.04, accuracy: 0.85 }
+  beginner: { power: 0.72, accuracy: 2.6 },
+  rookie: { power: 0.80, accuracy: 2.25 },
+  pro: { power: 0.90, accuracy: 1.5 },
+  elite: { power: 1.00, accuracy: 0.8 }
 };
 
 function prng(seed = 0x51f15e) {
@@ -28,7 +29,7 @@ function integrateFirstBounce(start, velocity, spinY) {
   let { x: vx, y: vy, z: vz } = velocity;
   let netY = null;
 
-  for (let step = 0; step < 360; step += 1) {
+  for (let step = 0; step < 480; step += 1) {
     const px = x; const py = y; const pz = z;
     vy -= G * dt;
     vx += spinY * vz * 0.014 * dt;
@@ -75,12 +76,12 @@ test('headless match simulation keeps rally shots above the net and inside court
           const playerX = -3.5 + rnd() * 7;
           const aggressive = start.y > 1.5 ? 1 : 0;
           target = {
-            x: clamp(playerX * 0.32 + (rnd() - 0.5) * level.accuracy * 3.4, -4.1, 4.1),
-            y: R,
-            z: 6.6 + rnd() * 1.6
-          };
-          speed = (8.8 + rnd() * 1.5 + aggressive * 1.0) * level.power;
-          lift = 3.15 + rnd() * 1.0 + aggressive * 0.45;
+  x: clamp(playerX * 0.18 + (rnd() - 0.5) * level.accuracy * 1.6, -3.25, 3.25),
+  y: R,
+  z: 6.3 + rnd() * 1.2
+};
+speed = (7.6 + rnd() * 1.0 + aggressive * 0.55) * level.power;
+lift = 3.7 + rnd() * 1.0 + aggressive * 0.3;
         }
 
         const { velocity } = computeSafeRallyVelocity({ start, target, horizontalSpeed: speed, liftHint: lift });

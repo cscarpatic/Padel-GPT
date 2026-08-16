@@ -6,6 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MatchScore } from './scoring.js';
 import { computeSafeRallyVelocity } from './physics.js';
 import { createAthlete } from './athlete.js';
+import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';
 import './style.css';
 
 const $ = (selector) => document.querySelector(selector);
@@ -40,12 +41,6 @@ const keys = new Set();
 const clock = new THREE.Clock();
 const COURT = { halfW: 5, halfL: 10, serviceLine: 6.95, netH: 0.88 };
 
-const DIFFICULTY = {
-  rookie: { speed: 3.9, reaction: 0.34, accuracy: 2.5, power: 0.82, label: 'ROOKIE' },
-  pro: { speed: 4.6, reaction: 0.22, accuracy: 1.5, power: 0.94, label: 'PRO' },
-  elite: { speed: 5.4, reaction: 0.13, accuracy: 0.85, power: 1.04, label: 'ELITE' }
-};
-
 const QUALITY = {
   low: { pixelRatio: 1, shadows: false, bloom: false, shadowSize: 512, spectators: 36 },
   medium: { pixelRatio: 1.35, shadows: true, bloom: true, shadowSize: 1024, spectators: 72 },
@@ -59,12 +54,20 @@ function autoQuality() {
   return 'high';
 }
 
+const difficultyVersion = localStorage.getItem('padelNovaDifficultyVersion');
+let savedDifficulty = localStorage.getItem('padelNovaDifficulty');
+if (difficultyVersion !== '3') {
+  savedDifficulty = 'beginner';
+  localStorage.setItem('padelNovaDifficulty', savedDifficulty);
+  localStorage.setItem('padelNovaDifficultyVersion', '3');
+}
+
 let settings = {
-  difficulty: localStorage.getItem('padelNovaDifficulty') || 'rookie',
+  difficulty: DIFFICULTY[savedDifficulty] ? savedDifficulty : 'beginner',
   quality: localStorage.getItem('padelNovaQuality') || 'auto',
   sound: localStorage.getItem('padelNovaSound') !== 'off'
 };
-difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'rookie';
+difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'beginner';
 qualitySelect.value = ['auto', 'low', 'medium', 'high'].includes(settings.quality) ? settings.quality : 'auto';
 
 let renderer;
@@ -104,7 +107,7 @@ let gamepadCameraWasDown = false;
 let touchVector = { x: 0, z: 0 };
 let stats = { currentRally: 0, maxRally: 0, maxSpeed: 0 };
 
-const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: 6.8, group: null, racket: null, swing: 0 };
+const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: PLAYER_TUNING.speed, group: null, racket: null, swing: 0 };
 const ai = { pos: new THREE.Vector3(0, 0, -7.8), vel: new THREE.Vector3(), speed: 5.25, group: null, racket: null, swing: 0 };
 const ball = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), mesh: null, radius: 0.105, spin: new THREE.Vector3(), trail: [] };
 
@@ -479,7 +482,7 @@ function playerHit() {
   if (serveReady && getServer() === 'player') { beginServe('player'); return; }
   if (!rallyLive || serviceActive && serviceReceiver === 'player') return;
   const distance = horizontalBallDistance(player);
-  if (ball.pos.z > 0 && distance < 1.62 && ball.pos.y < 3.0) {
+  if (ball.pos.z > 0 && distance < PLAYER_TUNING.hitReach && ball.pos.y < PLAYER_TUNING.maxHitHeight) {
     const xIntent = getMoveX(); const zIntent = getMoveZ(); const smash = ball.pos.y > 1.55 ? 1 : 0; const lob = zIntent > 0.45 ? 1 : 0;
     const targetX = THREE.MathUtils.clamp(ball.pos.x + xIntent * 3.2, -4.25, 4.25); const targetZ = lob ? -8.2 : -7.4;
     launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 10.2 + power * 5.2 + smash * 2.7 - lob * 1.2, 2.4 + power * 1.8 + smash * 1.0 + lob * 2.5, 'player');
@@ -491,10 +494,17 @@ function playerHit() {
 function aiHit() {
   if (!rallyLive || pointLocked || serviceActive && serviceReceiver === 'ai') return;
   const level = DIFFICULTY[settings.difficulty];
-  const error = level.accuracy; const targetX = THREE.MathUtils.clamp(player.pos.x * 0.32 + (Math.random() - 0.5) * error * 3.4, -4.1, 4.1);
-  const aggressive = ball.pos.y > 1.5 ? 1 : 0; const targetZ = 6.6 + Math.random() * 1.6;
-  launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), (8.8 + Math.random() * 1.5 + aggressive * 1.0) * level.power, 3.15 + Math.random() * 1.0 + aggressive * 0.45, 'ai');
-  prepareAfterHit('ai'); ai.swing = 1; shake = reducedMotion ? 0 : 0.07; sound.tone('hit', 0.86);
+  const aggressive = ball.pos.y > 1.5 ? 1 : 0;
+  const targetX = THREE.MathUtils.clamp(
+    player.pos.x * 0.18 + (Math.random() - 0.5) * level.accuracy * 1.6,
+    -3.25,
+    3.25
+  );
+  const targetZ = 6.3 + Math.random() * 1.2;
+  const speed = (7.6 + Math.random() * 1.0 + aggressive * 0.55) * level.power;
+  const lift = 3.7 + Math.random() * 1.0 + aggressive * 0.3;
+  launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), speed, lift, 'ai');
+  prepareAfterHit('ai'); ai.swing = 1; shake = reducedMotion ? 0 : 0.055; sound.tone('hit', 0.78);
 }
 
 function getMoveX() {
@@ -514,60 +524,130 @@ function clampActor(actor, side) {
 }
 
 function animateActor(actor, dt, isAI) {
-  actor.group.position.lerp(actor.pos, 1 - Math.exp(-12 * dt));
-  const speedFactor = Math.min(1, actor.vel.length() / 3.2);
-  const gait = Math.sin(performance.now() * 0.012) * speedFactor;
-  actor.group.position.y = Math.abs(gait) * 0.028;
+  actor.group.position.lerp(actor.pos, 1 - Math.exp(-16 * dt));
+  const speedFactor = Math.min(1, actor.vel.length() / 5.2);
+  const gait = Math.sin(performance.now() * 0.0145) * speedFactor;
+  const lateral = THREE.MathUtils.clamp(actor.vel.x / 9, -1, 1);
+  const forward = THREE.MathUtils.clamp(actor.vel.z / 9, -1, 1);
+  actor.group.position.y = Math.abs(gait) * 0.032;
+
+  const bodyRoot = actor.group.userData.bodyRoot;
+  if (bodyRoot) {
+    bodyRoot.rotation.z = THREE.MathUtils.lerp(bodyRoot.rotation.z, -lateral * 0.07, 0.16);
+    bodyRoot.rotation.x = THREE.MathUtils.lerp(bodyRoot.rotation.x, forward * 0.045, 0.16);
+  }
+
+  const head = actor.group.userData.head;
+  if (head) head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, lateral * 0.035, 0.14);
+
   const legs = actor.group.userData.legs;
-  if (legs) { legs[0].rotation.x = gait * 0.38; legs[1].rotation.x = -gait * 0.38; }
+  if (legs) {
+    legs[0].rotation.x = gait * 0.5;
+    legs[1].rotation.x = -gait * 0.5;
+  }
   const anchors = actor.group.userData.legAnchors;
   if (anchors) {
-    anchors[0].lower.rotation.x = Math.max(0, -gait) * 0.3;
-    anchors[1].lower.rotation.x = Math.max(0, gait) * 0.3;
-    anchors[0].shoe.rotation.x = Math.max(0, -gait) * 0.16;
-    anchors[1].shoe.rotation.x = Math.max(0, gait) * 0.16;
+    anchors[0].lower.rotation.x = Math.max(0, -gait) * 0.42;
+    anchors[1].lower.rotation.x = Math.max(0, gait) * 0.42;
+    anchors[0].shoe.rotation.x = Math.max(0, -gait) * 0.2;
+    anchors[1].shoe.rotation.x = Math.max(0, gait) * 0.2;
   }
+
   const arms = actor.group.userData.arms;
-  if (arms) arms[0].rotation.x = -gait * 0.22;
+  const forearms = actor.group.userData.forearms;
+  const armBaseZ = actor.group.userData.armBaseZ;
+  if (arms && armBaseZ) {
+    arms[0].rotation.x = -gait * 0.28;
+    arms[0].rotation.z = THREE.MathUtils.lerp(arms[0].rotation.z, armBaseZ[0], 0.18);
+  }
+  if (forearms) forearms[0].rotation.x = Math.max(0, gait) * 0.18;
+
   if (actor.swing > 0) {
-    actor.swing = Math.max(0, actor.swing - dt * 4.8);
+    actor.swing = Math.max(0, actor.swing - dt * 5.1);
     const s = Math.sin((1 - actor.swing) * Math.PI);
-    actor.racket.rotation.z = (isAI ? 1 : -1) * s * 1.18;
-    actor.racket.rotation.y = s * 0.42;
-    if (arms) arms[1].rotation.x = -1.08 * s;
+    actor.racket.rotation.z = (isAI ? 1 : -1) * s * 1.22;
+    actor.racket.rotation.y = s * 0.48;
+    actor.racket.rotation.x = -s * 0.18;
+    if (arms && armBaseZ) {
+      arms[1].rotation.x = -1.02 * s;
+      arms[1].rotation.z = armBaseZ[1] - 0.38 * s;
+    }
+    if (forearms) forearms[1].rotation.x = -0.72 * s;
+    if (bodyRoot) bodyRoot.rotation.y = (isAI ? -1 : 1) * s * 0.16;
   } else {
-    actor.racket.rotation.z = THREE.MathUtils.lerp(actor.racket.rotation.z, 0, 0.18);
-    actor.racket.rotation.y = THREE.MathUtils.lerp(actor.racket.rotation.y, 0, 0.18);
-    if (arms) arms[1].rotation.x = THREE.MathUtils.lerp(arms[1].rotation.x, 0.16, 0.18);
+    actor.racket.rotation.z = THREE.MathUtils.lerp(actor.racket.rotation.z, 0, 0.2);
+    actor.racket.rotation.y = THREE.MathUtils.lerp(actor.racket.rotation.y, 0, 0.2);
+    actor.racket.rotation.x = THREE.MathUtils.lerp(actor.racket.rotation.x, 0, 0.2);
+    if (arms && armBaseZ) {
+      arms[1].rotation.x = THREE.MathUtils.lerp(arms[1].rotation.x, gait * 0.2, 0.18);
+      arms[1].rotation.z = THREE.MathUtils.lerp(arms[1].rotation.z, armBaseZ[1], 0.18);
+    }
+    if (forearms) forearms[1].rotation.x = THREE.MathUtils.lerp(forearms[1].rotation.x, 0.08, 0.18);
+    if (bodyRoot) bodyRoot.rotation.y = THREE.MathUtils.lerp(bodyRoot.rotation.y, 0, 0.16);
   }
 }
 
 function updatePlayer(dt) {
-  let mx = getMoveX(), mz = getMoveZ(); const length = Math.hypot(mx, mz) || 1; if (length > 1) { mx /= length; mz /= length; }
+  let mx = getMoveX(), mz = getMoveZ();
+  const inputLength = Math.hypot(mx, mz);
+  if (inputLength > 1) { mx /= inputLength; mz /= inputLength; }
+
   const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  const mobileBoost = coarsePointer ? 1.12 : 1;
-  const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(player.speed * mobileBoost * (sprint ? 1.24 : 1));
-  player.vel.lerp(desired, 1 - Math.exp(-16 * dt)); player.pos.addScaledVector(player.vel, dt); clampActor(player, 'player');
-  const facing = Math.atan2(ball.pos.x - player.pos.x, ball.pos.z - player.pos.z); player.group.rotation.y = THREE.MathUtils.lerp(player.group.rotation.y, facing, 0.15); animateActor(player, dt, false);
+  const mobileBoost = coarsePointer ? PLAYER_TUNING.touchBoost : 1;
+  const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(
+    player.speed * mobileBoost * (sprint ? PLAYER_TUNING.sprintBoost : 1)
+  );
+
+  const level = DIFFICULTY[settings.difficulty];
+  if (rallyLive && ball.pos.z > 0 && level.assist > 0) {
+    const leadTime = 0.18;
+    const predicted = new THREE.Vector3(
+      THREE.MathUtils.clamp(ball.pos.x + ball.vel.x * leadTime, -4.25, 4.25),
+      0,
+      THREE.MathUtils.clamp(ball.pos.z + ball.vel.z * leadTime, 0.9, 8.95)
+    );
+    const assist = predicted.sub(player.pos);
+    const assistDistance = assist.length();
+    if (assistDistance > 0.18 && assistDistance < PLAYER_TUNING.assistRange) {
+      const idleMultiplier = inputLength < 0.12 ? 0.84 : 0.46;
+      assist.normalize().multiplyScalar(player.speed * mobileBoost * level.assist * idleMultiplier);
+      desired.add(assist);
+    }
+  }
+
+  desired.clampLength(0, player.speed * mobileBoost * 1.12);
+  player.vel.lerp(desired, 1 - Math.exp(-PLAYER_TUNING.acceleration * dt));
+  player.pos.addScaledVector(player.vel, dt);
+  clampActor(player, 'player');
+  const facing = Math.atan2(ball.pos.x - player.pos.x, ball.pos.z - player.pos.z);
+  player.group.rotation.y = THREE.MathUtils.lerp(player.group.rotation.y, facing, 0.2);
+  animateActor(player, dt, false);
 }
 
 function updateAI(dt) {
-  const level = DIFFICULTY[settings.difficulty]; ai.speed = level.speed; aiReactionTimer -= dt;
-  let targetX = THREE.MathUtils.clamp(ball.pos.x * 0.82, -3.8, 3.8); let targetZ = -6.6;
+  const level = DIFFICULTY[settings.difficulty];
+  ai.speed = level.speed;
+  aiReactionTimer -= dt;
+  let targetX = THREE.MathUtils.clamp(ball.pos.x * 0.72, -3.5, 3.5);
+  let targetZ = -6.8;
   if (rallyLive && ball.pos.z < 0) {
-  const lookAhead = ball.vel.z < 0 ? 0.18 : 0.08;
-  const predictedX = ball.pos.x + ball.vel.x * lookAhead;
-  const predictedZ = ball.pos.z + ball.vel.z * lookAhead;
-  targetZ = THREE.MathUtils.clamp(predictedZ - 0.55, -8.7, -1.5);
-  targetX = THREE.MathUtils.clamp(predictedX, -4.15, 4.15);
-}
-  const to = new THREE.Vector3(targetX - ai.pos.x, 0, targetZ - ai.pos.z); if (to.length() > 0.08) to.normalize().multiplyScalar(ai.speed);
-  ai.vel.lerp(to, 1 - Math.exp(-8 * dt)); ai.pos.addScaledVector(ai.vel, dt); clampActor(ai, 'ai');
-  ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.16); animateActor(ai, dt, true);
-  const aiReach = settings.difficulty === 'rookie' ? 1.58 : settings.difficulty === 'pro' ? 1.78 : 1.98;
-const canReturn = !(serviceActive && serviceReceiver === 'ai');
-if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < aiReach && ball.pos.y < 3.05 && canReturn && aiReactionTimer <= 0) {
-    aiReactionTimer = level.reaction; aiHit();
+    const lookAhead = ball.vel.z < 0 ? 0.14 : 0.06;
+    const predictedX = ball.pos.x + ball.vel.x * lookAhead;
+    const predictedZ = ball.pos.z + ball.vel.z * lookAhead;
+    targetZ = THREE.MathUtils.clamp(predictedZ - 0.48, -8.6, -1.7);
+    targetX = THREE.MathUtils.clamp(predictedX, -3.95, 3.95);
+  }
+  const to = new THREE.Vector3(targetX - ai.pos.x, 0, targetZ - ai.pos.z);
+  if (to.length() > 0.08) to.normalize().multiplyScalar(ai.speed);
+  ai.vel.lerp(to, 1 - Math.exp(-7 * dt));
+  ai.pos.addScaledVector(ai.vel, dt);
+  clampActor(ai, 'ai');
+  ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.14);
+  animateActor(ai, dt, true);
+  const canReturn = !(serviceActive && serviceReceiver === 'ai');
+  if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < level.aiReach && ball.pos.y < 2.95 && canReturn && aiReactionTimer <= 0) {
+    aiReactionTimer = level.reaction;
+    aiHit();
   }
 }
 
@@ -753,14 +833,22 @@ function setupEvents() {
   const stick = $('#touchStick'); const knob = stick.querySelector('i'); let pointerId = null;
   const updateStick = (event) => {
   const r = stick.getBoundingClientRect();
-  const dx = event.clientX - (r.left + r.width / 2); const dy = event.clientY - (r.top + r.height / 2);
-  const max = r.width * 0.34; const len = Math.hypot(dx, dy) || 1; const clamped = Math.min(len, max);
-  const nx = dx / len; const ny = dy / len; const px = nx * clamped; const py = ny * clamped;
-  const normalized = clamped / max; const curve = normalized * normalized * (3 - 2 * normalized);
+  const dx = event.clientX - (r.left + r.width / 2);
+  const dy = event.clientY - (r.top + r.height / 2);
+  const max = r.width * 0.37;
+  const len = Math.hypot(dx, dy) || 1;
+  const clamped = Math.min(len, max);
+  const nx = dx / len;
+  const ny = dy / len;
+  const px = nx * clamped;
+  const py = ny * clamped;
+  const normalized = clamped / max;
+  const curve = joystickCurve(normalized);
   knob.style.transform = `translate(${px}px,${py}px)`;
-  touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1); touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
+  touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1);
+  touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
 };
-  stick.addEventListener('pointerdown', (event) => { pointerId = event.pointerId; stick.setPointerCapture(pointerId); updateStick(event); });
+stick.addEventListener('pointerdown' , (event) => { pointerId = event.pointerId; stick.setPointerCapture(pointerId); updateStick(event); });
   stick.addEventListener('pointermove', (event) => { if (event.pointerId === pointerId) updateStick(event); });
   const clearStick = (event) => { if (pointerId !== null && (!event || event.pointerId === pointerId)) { pointerId = null; touchVector.x = touchVector.z = 0; knob.style.transform = 'translate(0,0)'; } };
   stick.addEventListener('pointerup', clearStick); stick.addEventListener('pointercancel', clearStick);
