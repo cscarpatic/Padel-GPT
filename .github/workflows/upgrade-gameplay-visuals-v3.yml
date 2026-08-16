@@ -1,0 +1,670 @@
+name: Validated gameplay and athlete overhaul v3
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade-test-commit:
+    if: github.event.head_commit.message == 'Start gameplay visual overhaul v3'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply easier gameplay and professional athlete overhaul
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          main_path = Path('src/main.js')
+          style_path = Path('src/style.css')
+          index_path = Path('index.html')
+          package_path = Path('package.json')
+          physics_test_path = Path('tests/physics.test.js')
+
+          main = main_path.read_text()
+          style = style_path.read_text()
+          index = index_path.read_text()
+          package = package_path.read_text()
+          physics_test = physics_test_path.read_text()
+
+          def once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, got {count}')
+              return source.replace(old, new, 1)
+
+          def sub_once(source, pattern, replacement, label, flags=0):
+              result, count = re.subn(pattern, replacement, source, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, got {count}')
+              return result
+
+          gameplay = r'''export const DIFFICULTY = {
+            beginner: { speed: 2.6, reaction: 0.62, accuracy: 2.6, power: 0.72, assist: 0.52, aiReach: 1.3, label: 'BEGINNER' },
+            rookie: { speed: 3.2, reaction: 0.46, accuracy: 2.25, power: 0.80, assist: 0.36, aiReach: 1.48, label: 'ROOKIE' },
+            pro: { speed: 4.2, reaction: 0.28, accuracy: 1.5, power: 0.90, assist: 0.20, aiReach: 1.75, label: 'PRO' },
+            elite: { speed: 5.2, reaction: 0.16, accuracy: 0.8, power: 1.00, assist: 0.08, aiReach: 2.0, label: 'ELITE' }
+          };
+
+          export const PLAYER_TUNING = {
+            speed: 9.2,
+            touchBoost: 1.25,
+            sprintBoost: 1.14,
+            acceleration: 28,
+            hitReach: 2.15,
+            maxHitHeight: 3.35,
+            assistRange: 4.3
+          };
+
+          export function joystickCurve(value) {
+            const n = Math.max(0, Math.min(1, value));
+            const deadZone = 0.035;
+            if (n <= deadZone) return 0;
+            const t = (n - deadZone) / (1 - deadZone);
+            return Math.min(1, 0.24 * Math.sqrt(t) + 0.76 * t);
+          }
+          '''
+          Path('src/gameplay.js').write_text(gameplay)
+
+          athlete = r'''export function createAthlete({ THREE, scene, mat, color, isAI = false }) {
+            const group = new THREE.Group();
+            const bodyRoot = new THREE.Group();
+            group.add(bodyRoot);
+
+            const shirt = mat(color, 0.31, 0.08);
+            const shirtDark = mat(isAI ? 0xb53e35 : 0x8eae24, 0.36, 0.06);
+            const trim = mat(0xf4f8f9, 0.25, 0.05);
+            const shorts = mat(isAI ? 0x171c20 : 0xf1f4f5, 0.4, 0.04);
+            const skin = mat(isAI ? 0xae7254 : 0xc98c69, 0.66, 0.01);
+            const skinShade = mat(isAI ? 0x915b44 : 0xa96f52, 0.72, 0.01);
+            const hairMat = mat(isAI ? 0x211a17 : 0x171a1b, 0.48, 0.03);
+            const dark = mat(0x111719, 0.34, 0.14);
+            const sole = mat(0xe9eff1, 0.3, 0.03);
+            const shoeAccent = mat(isAI ? 0xff654f : 0xc8ff34, 0.34, 0.06);
+            const eyeWhite = mat(0xf7fbff, 0.18, 0.0);
+            const iris = mat(isAI ? 0x4b3326 : 0x355b62, 0.24, 0.02);
+
+            const shadow = (mesh) => {
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+              return mesh;
+            };
+
+            const torso = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.7, 10, 22), shirt));
+            torso.position.y = 1.22;
+            torso.scale.set(1.02, 1, 0.86);
+            bodyRoot.add(torso);
+
+            const chestPanel = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.37, 0.035), shirtDark));
+            chestPanel.position.set(0, 1.28, 0.257);
+            chestPanel.rotation.x = -0.04;
+            bodyRoot.add(chestPanel);
+
+            const collar = shadow(new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.018, 10, 24, Math.PI), trim));
+            collar.rotation.x = Math.PI / 2;
+            collar.rotation.z = Math.PI;
+            collar.position.set(0, 1.58, 0.23);
+            bodyRoot.add(collar);
+
+            const shoulderStripe = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.53, 0.052, 0.31), trim));
+            shoulderStripe.position.set(0, 1.48, 0.035);
+            bodyRoot.add(shoulderStripe);
+
+            const logo = new THREE.Mesh(new THREE.CircleGeometry(0.047, 18), new THREE.MeshBasicMaterial({ color: isAI ? 0xffffff : 0x162004 }));
+            logo.position.set(0.12, 1.34, 0.279);
+            bodyRoot.add(logo);
+
+            const hips = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.255, 0.27, 0.18, 24), shorts));
+            hips.position.y = 0.82;
+            bodyRoot.add(hips);
+
+            const shortsLeft = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.25, 0.28), shorts));
+            shortsLeft.position.set(-0.125, 0.69, 0);
+            bodyRoot.add(shortsLeft);
+            const shortsRight = shortsLeft.clone();
+            shortsRight.position.x = 0.125;
+            bodyRoot.add(shortsRight);
+
+            const neck = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.077, 0.09, 0.16, 16), skin));
+            neck.position.y = 1.69;
+            bodyRoot.add(neck);
+
+            const headPivot = new THREE.Group();
+            headPivot.position.y = 1.89;
+            bodyRoot.add(headPivot);
+
+            const cranium = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.205, 30, 22), skin));
+            cranium.scale.set(0.91, 1.04, 0.96);
+            headPivot.add(cranium);
+
+            const jaw = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.165, 24, 18), skinShade));
+            jaw.position.set(0, -0.095, 0.018);
+            jaw.scale.set(0.9, 0.63, 0.86);
+            headPivot.add(jaw);
+
+            for (const earX of [-0.19, 0.19]) {
+              const ear = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.036, 14, 10), skin));
+              ear.position.set(earX, -0.005, 0);
+              ear.scale.set(0.55, 1, 0.42);
+              headPivot.add(ear);
+            }
+
+            const nose = shadow(new THREE.Mesh(new THREE.ConeGeometry(0.027, 0.07, 10), skinShade));
+            nose.rotation.x = Math.PI / 2;
+            nose.position.set(0, -0.015, 0.196);
+            headPivot.add(nose);
+
+            for (const eyeX of [-0.058, 0.058]) {
+              const eye = new THREE.Mesh(new THREE.SphereGeometry(0.017, 14, 10), eyeWhite);
+              eye.position.set(eyeX, 0.026, 0.179);
+              eye.scale.set(1, 0.72, 0.45);
+              headPivot.add(eye);
+              const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), iris);
+              pupil.position.set(eyeX, 0.026, 0.192);
+              pupil.scale.set(1, 0.9, 0.45);
+              headPivot.add(pupil);
+              const brow = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.011, 0.012), hairMat);
+              brow.position.set(eyeX, 0.069, 0.177);
+              brow.rotation.z = eyeX < 0 ? 0.08 : -0.08;
+              headPivot.add(brow);
+            }
+
+            const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.012, 0.012), mat(0x63372f, 0.64, 0));
+            mouth.position.set(0, -0.097, 0.179);
+            headPivot.add(mouth);
+
+            const hairCap = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.21, 30, 20, 0, Math.PI * 2, 0, Math.PI * 0.56), hairMat));
+            hairCap.position.y = 0.072;
+            hairCap.scale.set(0.96, 0.82, 1.02);
+            headPivot.add(hairCap);
+
+            const hairFront = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.055, 0.07), hairMat));
+            hairFront.position.set(0, 0.105, 0.158);
+            hairFront.rotation.x = -0.22;
+            headPivot.add(hairFront);
+
+            if (isAI) {
+              const beard = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.17, 22, 14, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.5), hairMat));
+              beard.position.set(0, -0.075, 0.012);
+              beard.scale.set(0.86, 0.72, 0.9);
+              headPivot.add(beard);
+            }
+
+            const legAnchors = [];
+            for (const [index, x] of [-0.14, 0.14].entries()) {
+              const upperPivot = new THREE.Group();
+              upperPivot.position.set(x, 0.72, 0);
+              bodyRoot.add(upperPivot);
+
+              const upper = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.31, 7, 12), skin));
+              upper.position.y = -0.17;
+              upperPivot.add(upper);
+
+              const knee = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.092, 16, 12), skinShade));
+              knee.position.y = -0.39;
+              upperPivot.add(knee);
+
+              const lowerPivot = new THREE.Group();
+              lowerPivot.position.y = -0.39;
+              upperPivot.add(lowerPivot);
+
+              const lower = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.072, 0.29, 7, 11), skin));
+              lower.position.y = -0.16;
+              lowerPivot.add(lower);
+
+              const sock = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.074, 0.078, 0.13, 14), trim));
+              sock.position.y = -0.32;
+              lowerPivot.add(sock);
+
+              const shoe = new THREE.Group();
+              shoe.position.set(0, -0.39, 0.055);
+              lowerPivot.add(shoe);
+              const shoeBody = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.085, 0.27), dark));
+              shoeBody.position.set(0, 0.045, 0.05);
+              shoe.add(shoeBody);
+              const toe = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 10), dark));
+              toe.position.set(0, 0.04, 0.165);
+              toe.scale.set(0.9, 0.55, 1.2);
+              shoe.add(toe);
+              const outsole = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.022, 0.31), sole));
+              outsole.position.set(0, -0.004, 0.07);
+              shoe.add(outsole);
+              const shoeStripe = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.052, 0.2), shoeAccent));
+              shoeStripe.position.set(index === 0 ? -0.082 : 0.082, 0.052, 0.065);
+              shoe.add(shoeStripe);
+
+              legAnchors.push({ upper: upperPivot, lower: lowerPivot, shoe });
+            }
+
+            const arms = [];
+            const forearms = [];
+            const armBaseZ = [];
+            for (const [index, side] of [-1, 1].entries()) {
+              const shoulder = new THREE.Group();
+              shoulder.position.set(side * 0.325, 1.45, 0);
+              shoulder.rotation.z = side * -0.23;
+              armBaseZ.push(shoulder.rotation.z);
+              bodyRoot.add(shoulder);
+
+              const sleeve = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.16, 6, 11), shirt));
+              sleeve.position.y = -0.08;
+              shoulder.add(sleeve);
+
+              const upperArm = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.25, 6, 11), skin));
+              upperArm.position.y = -0.25;
+              shoulder.add(upperArm);
+
+              const elbow = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.072, 14, 10), skinShade));
+              elbow.position.y = -0.42;
+              shoulder.add(elbow);
+
+              const forearmPivot = new THREE.Group();
+              forearmPivot.position.y = -0.42;
+              shoulder.add(forearmPivot);
+
+              const forearm = shadow(new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.24, 6, 10), skin));
+              forearm.position.y = -0.14;
+              forearmPivot.add(forearm);
+
+              const wristBand = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.07, 12), index === 1 ? shoeAccent : trim));
+              wristBand.position.y = -0.29;
+              forearmPivot.add(wristBand);
+
+              const hand = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.065, 14, 10), skin));
+              hand.position.y = -0.35;
+              hand.scale.set(0.82, 1.05, 0.74);
+              forearmPivot.add(hand);
+
+              arms.push(shoulder);
+              forearms.push(forearmPivot);
+            }
+
+            const racket = new THREE.Group();
+            const grip = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.042, 0.45, 14), trim));
+            grip.rotation.z = Math.PI / 2;
+            grip.position.x = 0.18;
+            racket.add(grip);
+
+            const gripBands = mat(isAI ? 0x321510 : 0x28320f, 0.55, 0.02);
+            for (let i = 0; i < 5; i += 1) {
+              const band = new THREE.Mesh(new THREE.TorusGeometry(0.0415, 0.006, 7, 18), gripBands);
+              band.rotation.y = Math.PI / 2;
+              band.position.x = 0.02 + i * 0.075;
+              racket.add(band);
+            }
+
+            const throat = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.075, 0.052), dark));
+            throat.position.x = 0.34;
+            racket.add(throat);
+
+            const racketFaceMat = mat(isAI ? 0xff654f : 0xc8ff34, 0.28, 0.16);
+            const face = shadow(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.052, 46), racketFaceMat));
+            face.rotation.z = Math.PI / 2;
+            face.position.x = 0.52;
+            face.scale.y = 1.18;
+            racket.add(face);
+
+            const rim = shadow(new THREE.Mesh(new THREE.TorusGeometry(0.249, 0.024, 16, 48), dark));
+            rim.rotation.y = Math.PI / 2;
+            rim.scale.y = 1.18;
+            rim.position.x = 0.52;
+            racket.add(rim);
+
+            const bridge = shadow(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.19, 0.06), dark));
+            bridge.position.set(0.39, -0.19, 0);
+            racket.add(bridge);
+
+            const holeMat = new THREE.MeshBasicMaterial({ color: 0x091013 });
+            for (let y = -0.14; y <= 0.14; y += 0.056) {
+              for (let z = -0.13; z <= 0.13; z += 0.054) {
+                if (y * y + z * z < 0.029) {
+                  const hole = new THREE.Mesh(new THREE.CircleGeometry(0.011, 9), holeMat);
+                  hole.rotation.y = Math.PI / 2;
+                  hole.position.set(0.548, y, z);
+                  racket.add(hole);
+                }
+              }
+            }
+
+            const racketLogo = new THREE.Mesh(new THREE.CircleGeometry(0.055, 20), new THREE.MeshBasicMaterial({ color: isAI ? 0xffdfd9 : 0x1c2607 }));
+            racketLogo.rotation.y = Math.PI / 2;
+            racketLogo.position.set(0.55, 0, 0.002);
+            racket.add(racketLogo);
+
+            racket.position.set(0.36, 1.08, 0.02);
+            bodyRoot.add(racket);
+
+            group.userData.racket = racket;
+            group.userData.bodyRoot = bodyRoot;
+            group.userData.head = headPivot;
+            group.userData.legs = [legAnchors[0].upper, legAnchors[1].upper];
+            group.userData.legAnchors = legAnchors;
+            group.userData.arms = arms;
+            group.userData.forearms = forearms;
+            group.userData.armBaseZ = armBaseZ;
+            scene.add(group);
+            return group;
+          }
+          '''
+          Path('src/athlete.js').write_text(athlete)
+
+          gameplay_test = r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from '../src/gameplay.js';
+
+          test('iPad player tuning is fast and forgiving', () => {
+            assert.ok(PLAYER_TUNING.speed >= 9);
+            assert.ok(PLAYER_TUNING.touchBoost >= 1.2);
+            assert.ok(PLAYER_TUNING.hitReach >= 2);
+            assert.ok(PLAYER_TUNING.acceleration >= 24);
+          });
+
+          test('beginner mode is significantly easier than pro', () => {
+            assert.ok(DIFFICULTY.beginner.speed < DIFFICULTY.pro.speed);
+            assert.ok(DIFFICULTY.beginner.reaction > DIFFICULTY.pro.reaction);
+            assert.ok(DIFFICULTY.beginner.power < DIFFICULTY.pro.power);
+            assert.ok(DIFFICULTY.beginner.assist > DIFFICULTY.pro.assist);
+            assert.ok(DIFFICULTY.beginner.aiReach < DIFFICULTY.pro.aiReach);
+          });
+
+          test('joystick response is precise near center and reaches full input', () => {
+            assert.equal(joystickCurve(0), 0);
+            assert.ok(joystickCurve(0.1) > 0 && joystickCurve(0.1) < 0.25);
+            assert.ok(joystickCurve(0.5) > 0.45 && joystickCurve(0.5) < 0.7);
+            assert.equal(joystickCurve(1), 1);
+          });
+          '''
+          Path('tests/gameplay.test.js').write_text(gameplay_test)
+
+          if "import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';" not in main:
+              main = once(main,
+                  "import { createAthlete } from './athlete.js';",
+                  "import { createAthlete } from './athlete.js';\nimport { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';",
+                  'gameplay import')
+
+          main = sub_once(main, r"\nconst DIFFICULTY = \{.*?\n\};\n\nconst QUALITY", "\nconst QUALITY", 'remove inline difficulty', re.S)
+
+          settings_block = r'''const difficultyVersion = localStorage.getItem('padelNovaDifficultyVersion');
+          let savedDifficulty = localStorage.getItem('padelNovaDifficulty');
+          if (difficultyVersion !== '3') {
+            savedDifficulty = 'beginner';
+            localStorage.setItem('padelNovaDifficulty', savedDifficulty);
+            localStorage.setItem('padelNovaDifficultyVersion', '3');
+          }
+
+          let settings = {
+            difficulty: DIFFICULTY[savedDifficulty] ? savedDifficulty : 'beginner',
+            quality: localStorage.getItem('padelNovaQuality') || 'auto',
+            sound: localStorage.getItem('padelNovaSound') !== 'off'
+          };
+          difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'beginner';
+          qualitySelect.value = ['auto', 'low', 'medium', 'high'].includes(settings.quality) ? settings.quality : 'auto';'''
+          main = sub_once(main,
+              r"let settings = \{.*?qualitySelect\.value = \['auto', 'low', 'medium', 'high'\]\.includes\(settings\.quality\) \? settings\.quality : 'auto';",
+              settings_block,
+              'settings migration', re.S)
+
+          main = sub_once(main,
+              r"const player = \{ pos: new THREE\.Vector3\(0, 0, 7\.8\), vel: new THREE\.Vector3\(\), speed: [0-9.]+, group: null, racket: null, swing: 0 \};",
+              "const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: PLAYER_TUNING.speed, group: null, racket: null, swing: 0 };",
+              'player speed')
+
+          main = sub_once(main,
+              r"if \(ball\.pos\.z > 0 && distance < [0-9.]+ && ball\.pos\.y < [0-9.]+\) \{",
+              "if (ball.pos.z > 0 && distance < PLAYER_TUNING.hitReach && ball.pos.y < PLAYER_TUNING.maxHitHeight) {",
+              'player hit reach')
+
+          ai_hit = r'''function aiHit() {
+            if (!rallyLive || pointLocked || serviceActive && serviceReceiver === 'ai') return;
+            const level = DIFFICULTY[settings.difficulty];
+            const aggressive = ball.pos.y > 1.5 ? 1 : 0;
+            const targetX = THREE.MathUtils.clamp(
+              player.pos.x * 0.18 + (Math.random() - 0.5) * level.accuracy * 1.6,
+              -3.25,
+              3.25
+            );
+            const targetZ = 6.3 + Math.random() * 1.2;
+            const speed = (7.6 + Math.random() * 1.0 + aggressive * 0.55) * level.power;
+            const lift = 3.7 + Math.random() * 1.0 + aggressive * 0.3;
+            launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), speed, lift, 'ai');
+            prepareAfterHit('ai'); ai.swing = 1; shake = reducedMotion ? 0 : 0.055; sound.tone('hit', 0.78);
+          }
+
+          function getMoveX'''
+          main = sub_once(main, r"function aiHit\(\) \{.*?\n\}\n\nfunction getMoveX", ai_hit, 'AI shot function', re.S)
+
+          animate_actor = r'''function animateActor(actor, dt, isAI) {
+            actor.group.position.lerp(actor.pos, 1 - Math.exp(-16 * dt));
+            const speedFactor = Math.min(1, actor.vel.length() / 5.2);
+            const gait = Math.sin(performance.now() * 0.0145) * speedFactor;
+            const lateral = THREE.MathUtils.clamp(actor.vel.x / 9, -1, 1);
+            const forward = THREE.MathUtils.clamp(actor.vel.z / 9, -1, 1);
+            actor.group.position.y = Math.abs(gait) * 0.032;
+
+            const bodyRoot = actor.group.userData.bodyRoot;
+            if (bodyRoot) {
+              bodyRoot.rotation.z = THREE.MathUtils.lerp(bodyRoot.rotation.z, -lateral * 0.07, 0.16);
+              bodyRoot.rotation.x = THREE.MathUtils.lerp(bodyRoot.rotation.x, forward * 0.045, 0.16);
+            }
+
+            const head = actor.group.userData.head;
+            if (head) head.rotation.z = THREE.MathUtils.lerp(head.rotation.z, lateral * 0.035, 0.14);
+
+            const legs = actor.group.userData.legs;
+            if (legs) {
+              legs[0].rotation.x = gait * 0.5;
+              legs[1].rotation.x = -gait * 0.5;
+            }
+            const anchors = actor.group.userData.legAnchors;
+            if (anchors) {
+              anchors[0].lower.rotation.x = Math.max(0, -gait) * 0.42;
+              anchors[1].lower.rotation.x = Math.max(0, gait) * 0.42;
+              anchors[0].shoe.rotation.x = Math.max(0, -gait) * 0.2;
+              anchors[1].shoe.rotation.x = Math.max(0, gait) * 0.2;
+            }
+
+            const arms = actor.group.userData.arms;
+            const forearms = actor.group.userData.forearms;
+            const armBaseZ = actor.group.userData.armBaseZ;
+            if (arms && armBaseZ) {
+              arms[0].rotation.x = -gait * 0.28;
+              arms[0].rotation.z = THREE.MathUtils.lerp(arms[0].rotation.z, armBaseZ[0], 0.18);
+            }
+            if (forearms) forearms[0].rotation.x = Math.max(0, gait) * 0.18;
+
+            if (actor.swing > 0) {
+              actor.swing = Math.max(0, actor.swing - dt * 5.1);
+              const s = Math.sin((1 - actor.swing) * Math.PI);
+              actor.racket.rotation.z = (isAI ? 1 : -1) * s * 1.22;
+              actor.racket.rotation.y = s * 0.48;
+              actor.racket.rotation.x = -s * 0.18;
+              if (arms && armBaseZ) {
+                arms[1].rotation.x = -1.02 * s;
+                arms[1].rotation.z = armBaseZ[1] - 0.38 * s;
+              }
+              if (forearms) forearms[1].rotation.x = -0.72 * s;
+              if (bodyRoot) bodyRoot.rotation.y = (isAI ? -1 : 1) * s * 0.16;
+            } else {
+              actor.racket.rotation.z = THREE.MathUtils.lerp(actor.racket.rotation.z, 0, 0.2);
+              actor.racket.rotation.y = THREE.MathUtils.lerp(actor.racket.rotation.y, 0, 0.2);
+              actor.racket.rotation.x = THREE.MathUtils.lerp(actor.racket.rotation.x, 0, 0.2);
+              if (arms && armBaseZ) {
+                arms[1].rotation.x = THREE.MathUtils.lerp(arms[1].rotation.x, gait * 0.2, 0.18);
+                arms[1].rotation.z = THREE.MathUtils.lerp(arms[1].rotation.z, armBaseZ[1], 0.18);
+              }
+              if (forearms) forearms[1].rotation.x = THREE.MathUtils.lerp(forearms[1].rotation.x, 0.08, 0.18);
+              if (bodyRoot) bodyRoot.rotation.y = THREE.MathUtils.lerp(bodyRoot.rotation.y, 0, 0.16);
+            }
+          }
+
+          function updatePlayer(dt)'''
+          main = sub_once(main, r"function animateActor\(actor, dt, isAI\) \{.*?\n\}\n\nfunction updatePlayer\(dt\)", animate_actor, 'actor animation', re.S)
+
+          update_player = r'''function updatePlayer(dt) {
+            let mx = getMoveX(), mz = getMoveZ();
+            const inputLength = Math.hypot(mx, mz);
+            if (inputLength > 1) { mx /= inputLength; mz /= inputLength; }
+
+            const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+            const mobileBoost = coarsePointer ? PLAYER_TUNING.touchBoost : 1;
+            const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(
+              player.speed * mobileBoost * (sprint ? PLAYER_TUNING.sprintBoost : 1)
+            );
+
+            const level = DIFFICULTY[settings.difficulty];
+            if (rallyLive && ball.pos.z > 0 && level.assist > 0) {
+              const leadTime = 0.18;
+              const predicted = new THREE.Vector3(
+                THREE.MathUtils.clamp(ball.pos.x + ball.vel.x * leadTime, -4.25, 4.25),
+                0,
+                THREE.MathUtils.clamp(ball.pos.z + ball.vel.z * leadTime, 0.9, 8.95)
+              );
+              const assist = predicted.sub(player.pos);
+              const assistDistance = assist.length();
+              if (assistDistance > 0.18 && assistDistance < PLAYER_TUNING.assistRange) {
+                const idleMultiplier = inputLength < 0.12 ? 0.84 : 0.46;
+                assist.normalize().multiplyScalar(player.speed * mobileBoost * level.assist * idleMultiplier);
+                desired.add(assist);
+              }
+            }
+
+            desired.clampLength(0, player.speed * mobileBoost * 1.12);
+            player.vel.lerp(desired, 1 - Math.exp(-PLAYER_TUNING.acceleration * dt));
+            player.pos.addScaledVector(player.vel, dt);
+            clampActor(player, 'player');
+            const facing = Math.atan2(ball.pos.x - player.pos.x, ball.pos.z - player.pos.z);
+            player.group.rotation.y = THREE.MathUtils.lerp(player.group.rotation.y, facing, 0.2);
+            animateActor(player, dt, false);
+          }
+
+          function updateAI(dt)'''
+          main = sub_once(main, r"function updatePlayer\(dt\) \{.*?\n\}\n\nfunction updateAI\(dt\)", update_player, 'player movement', re.S)
+
+          update_ai = r'''function updateAI(dt) {
+            const level = DIFFICULTY[settings.difficulty];
+            ai.speed = level.speed;
+            aiReactionTimer -= dt;
+            let targetX = THREE.MathUtils.clamp(ball.pos.x * 0.72, -3.5, 3.5);
+            let targetZ = -6.8;
+            if (rallyLive && ball.pos.z < 0) {
+              const lookAhead = ball.vel.z < 0 ? 0.14 : 0.06;
+              const predictedX = ball.pos.x + ball.vel.x * lookAhead;
+              const predictedZ = ball.pos.z + ball.vel.z * lookAhead;
+              targetZ = THREE.MathUtils.clamp(predictedZ - 0.48, -8.6, -1.7);
+              targetX = THREE.MathUtils.clamp(predictedX, -3.95, 3.95);
+            }
+            const to = new THREE.Vector3(targetX - ai.pos.x, 0, targetZ - ai.pos.z);
+            if (to.length() > 0.08) to.normalize().multiplyScalar(ai.speed);
+            ai.vel.lerp(to, 1 - Math.exp(-7 * dt));
+            ai.pos.addScaledVector(ai.vel, dt);
+            clampActor(ai, 'ai');
+            ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.14);
+            animateActor(ai, dt, true);
+            const canReturn = !(serviceActive && serviceReceiver === 'ai');
+            if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < level.aiReach && ball.pos.y < 2.95 && canReturn && aiReactionTimer <= 0) {
+              aiReactionTimer = level.reaction;
+              aiHit();
+            }
+          }
+
+          function horizontalBallDistance'''
+          main = sub_once(main, r"function updateAI\(dt\) \{.*?\n\}\n\nfunction horizontalBallDistance", update_ai, 'AI movement', re.S)
+
+          stick_block = r'''  const updateStick = (event) => {
+            const r = stick.getBoundingClientRect();
+            const dx = event.clientX - (r.left + r.width / 2);
+            const dy = event.clientY - (r.top + r.height / 2);
+            const max = r.width * 0.37;
+            const len = Math.hypot(dx, dy) || 1;
+            const clamped = Math.min(len, max);
+            const nx = dx / len;
+            const ny = dy / len;
+            const px = nx * clamped;
+            const py = ny * clamped;
+            const normalized = clamped / max;
+            const curve = joystickCurve(normalized);
+            knob.style.transform = `translate(${px}px,${py}px)`;
+            touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1);
+            touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
+          };
+          stick.addEventListener('pointerdown' '''
+          main = sub_once(main,
+              r"  const updateStick = \(event\) => \{.*?\n\};\n  stick\.addEventListener\('pointerdown'",
+              stick_block,
+              'touch stick', re.S)
+
+          index = sub_once(index,
+              r"<select id=\"difficulty\">.*?</select>",
+              '''<select id="difficulty">
+            <option value="beginner" selected>Beginner</option>
+            <option value="rookie">Rookie</option>
+            <option value="pro">Pro</option>
+            <option value="elite">Elite</option>
+          </select>''',
+              'difficulty menu', re.S)
+
+          touch_css = "#touch{position:fixed;inset:auto 0 var(--safe-bottom) 0;z-index:15;pointer-events:none;padding:0 calc(var(--safe-left) + 4px);justify-content:space-between;align-items:end}.stick{pointer-events:auto;position:relative;width:202px;height:202px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:radial-gradient(circle at 50% 50%,rgba(200,255,52,.09) 0 20%,rgba(255,255,255,.07) 21% 36%,rgba(5,13,17,.78) 37% 100%);box-shadow:0 18px 48px rgba(0,0,0,.34),inset 0 0 36px rgba(255,255,255,.055),0 0 30px rgba(200,255,52,.06);backdrop-filter:blur(14px);touch-action:none}.stick::before,.stick::after{content:'';position:absolute;pointer-events:none}.stick::before{inset:24px;border-radius:50%;border:1px solid rgba(255,255,255,.07)}.stick::after{left:50%;top:20px;bottom:20px;width:1px;background:linear-gradient(transparent,rgba(255,255,255,.07),transparent);box-shadow:-80px 0 0 rgba(255,255,255,.025),80px 0 0 rgba(255,255,255,.025)}.stick i{position:absolute;left:50%;top:50%;width:82px;height:82px;margin:-41px;border-radius:50%;background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.38),rgba(255,255,255,.11) 58%,rgba(200,255,52,.08));border:1px solid rgba(230,255,157,.32);box-shadow:0 12px 32px rgba(0,0,0,.34),0 0 24px rgba(200,255,52,.09);transform:translate(0,0)}#touchHit{pointer-events:auto;width:116px;height:116px;border-radius:50%;border:1px solid #f0ffb8;background:radial-gradient(circle at 35% 30%,rgba(253,255,227,.99),rgba(200,255,52,.94) 58%,rgba(151,198,36,.96));color:#101508;font-weight:950;letter-spacing:.08em;box-shadow:0 0 42px rgba(200,255,52,.46),0 18px 38px rgba(0,0,0,.3);touch-action:none}"
+          style = sub_once(style, r"#touch\{.*?#touchHit\{.*?\}(?=\.orientation-hint)", touch_css, 'touch CSS', re.S)
+          style = sub_once(style,
+              r"\.stick\{width:142px;height:142px\}\.stick i\{width:64px;height:64px;margin:-32px\}#touchHit\{width:96px;height:96px\}",
+              ".stick{width:178px;height:178px}.stick i{width:74px;height:74px;margin:-37px}#touchHit{width:108px;height:108px}",
+              'small touch CSS')
+
+          physics_test = once(physics_test, "for (let step = 0; step < 360; step += 1)", "for (let step = 0; step < 480; step += 1)", 'physics integration duration')
+          physics_test = sub_once(physics_test,
+              r"const DIFFICULTY = \{.*?\n\};",
+              """const DIFFICULTY = {
+            beginner: { power: 0.72, accuracy: 2.6 },
+            rookie: { power: 0.80, accuracy: 2.25 },
+            pro: { power: 0.90, accuracy: 1.5 },
+            elite: { power: 1.00, accuracy: 0.8 }
+          };""",
+              'physics difficulty', re.S)
+          physics_test = sub_once(physics_test,
+              r"target = \{\n\s*x: clamp\(playerX \* 0\.32 \+ \(rnd\(\) - 0\.5\) \* level\.accuracy \* 3\.4, -4\.1, 4\.1\),\n\s*y: R,\n\s*z: 6\.6 \+ rnd\(\) \* 1\.6\n\s*\};\n\s*speed = \(8\.8 \+ rnd\(\) \* 1\.5 \+ aggressive \* 1\.0\) \* level\.power;\n\s*lift = 3\.15 \+ rnd\(\) \* 1\.0 \+ aggressive \* 0\.45;",
+              """target = {
+            x: clamp(playerX * 0.18 + (rnd() - 0.5) * level.accuracy * 1.6, -3.25, 3.25),
+            y: R,
+            z: 6.3 + rnd() * 1.2
+          };
+          speed = (7.6 + rnd() * 1.0 + aggressive * 0.55) * level.power;
+          lift = 3.7 + rnd() * 1.0 + aggressive * 0.3;""",
+              'physics CPU profile', re.S)
+
+          package = once(package,
+              '"lint": "node --check src/main.js && node --check src/scoring.js",',
+              '"lint": "node --check src/main.js && node --check src/scoring.js && node --check src/physics.js && node --check src/athlete.js && node --check src/gameplay.js",',
+              'lint coverage')
+
+          main_path.write_text(main)
+          style_path.write_text(style)
+          index_path.write_text(index)
+          package_path.write_text(package)
+          physics_test_path.write_text(physics_test)
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Simulate and validate gameplay
+        run: npm run check
+
+      - name: Commit only validated overhaul
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/upgrade-gameplay-visuals-v3.yml
+          rm -f .github/workflows/patch-ipad-gameplay-visuals.yml
+          git add -A
+          git commit -m "Overhaul player speed, easy mode and athlete visuals"
+          git push origin main
