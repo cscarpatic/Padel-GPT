@@ -1,0 +1,151 @@
+name: Validated touch controls and CPU serve fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/touch-shot-controls.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Apply CPU serve and touch control fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path('src/main.js')
+          text = main.read_text()
+
+          old = "let hitBuffer = 0;"
+          new = "let hitBuffer = 0;\nlet pendingTouchShot = null;\nlet touchShotGesture = { active: false, pointerId: null, startX: 0, startY: 0, startedAt: 0, aim: 0, lob: 0, charge: 0.5 };"
+          if old not in text: raise SystemExit('touch shot state target missing')
+          text = text.replace(old, new, 1)
+
+          old = "s.struck = true; const target = new THREE.Vector3(serviceTargetSign * 2.2, ball.radius, s.server === 'player' ? -4.65 : 4.65);\n    launchBallistic(target, 0.78, s.server, 4.5); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();"
+          new = "s.struck = true;\n    const targetX = serviceTargetSign * (s.server === 'ai' ? 1.55 : 1.85);\n    const targetZ = s.server === 'player' ? -4.4 : 4.4;\n    const target = new THREE.Vector3(targetX, ball.radius, targetZ);\n    launchService(target, s.server); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();"
+          if old not in text: raise SystemExit('serve launch target missing')
+          text = text.replace(old, new, 1)
+
+          marker = "function launchBallistic(target, flightTime, hitter, spinY = 7) {"
+          insert = "function launchService(target, hitter) {\n  const { velocity } = computeSafeRallyVelocity({\n    start: ball.pos,\n    target,\n    horizontalSpeed: hitter === 'ai' ? 13.2 : 13.8,\n    liftHint: 4.1,\n    netHeight: COURT.netH,\n    ballRadius: ball.radius,\n    clearanceMargin: 0.1\n  });\n  ball.vel.set(velocity.x, velocity.y, velocity.z);\n  ball.spin.set(0, 0, -ball.vel.x * 0.16);\n  recordShotSpeed();\n}\n\n"
+          if marker not in text: raise SystemExit('launchBallistic marker missing')
+          text = text.replace(marker, insert + marker, 1)
+
+          old = "if (serveReady && getServer() === 'player') { beginServe('player'); return true; }"
+          new = "if (serveReady && getServer() === 'player') { pendingTouchShot = null; beginServe('player'); return true; }"
+          if old not in text: raise SystemExit('player serve target missing')
+          text = text.replace(old, new, 1)
+
+          old = "const xIntent = getMoveX(); const zIntent = getMoveZ(); const smash = ball.pos.y > 1.55 ? 1 : 0; const lob = zIntent > 0.45 ? 1 : 0;\n    const targetX = THREE.MathUtils.clamp(ball.pos.x + xIntent * 3.2, -4.25, 4.25); const targetZ = lob ? -8.2 : -7.4;\n    launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 10.2 + power * 5.2 + smash * 2.7 - lob * 1.2, 2.4 + power * 1.8 + smash * 1.0 + lob * 2.5, 'player');"
+          new = "const touchShot = coarsePointer ? pendingTouchShot : null;\n    const xIntent = touchShot ? touchShot.aim : getMoveX();\n    const zIntent = getMoveZ();\n    const shotPower = touchShot ? touchShot.power : power;\n    const smash = ball.pos.y > 1.55 ? 1 : 0;\n    const lob = touchShot ? touchShot.lob > 0.45 : zIntent > 0.45 ? 1 : 0;\n    const targetX = THREE.MathUtils.clamp(ball.pos.x + xIntent * 3.45, -4.25, 4.25); const targetZ = lob ? -8.35 : -7.4;\n    launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 9.8 + shotPower * 5.8 + smash * 2.5 - lob * 1.0, 2.55 + shotPower * 1.65 + smash * 0.9 + lob * 2.65, 'player');"
+          if old not in text: raise SystemExit('player shot logic target missing')
+          text = text.replace(old, new, 1)
+
+          old = "prepareAfterHit('player'); player.swing = 1; shake = reducedMotion ? 0 : 0.14; sound.tone('hit', 1.12); statusEl.textContent = smash ? 'SMASH' : lob ? 'LOB' : 'RALLY';"
+          new = "prepareAfterHit('player'); pendingTouchShot = null; player.swing = 1; shake = reducedMotion ? 0 : 0.14; sound.tone('hit', 1.12); statusEl.textContent = smash ? 'SMASH' : lob ? 'LOB' : 'RALLY';"
+          if old not in text: raise SystemExit('pending shot clear target missing')
+          text = text.replace(old, new, 1)
+
+          old = "power += powerDir * dt * 0.58; if (power > 1) { power = 1; powerDir = -1; } if (power < 0.12) { power = 0.12; powerDir = 1; } $('#power i').style.height = `${power * 100}%`;"
+          new = "if (coarsePointer) {\n      if (touchShotGesture.active) {\n        const held = Math.max(0, (performance.now() - touchShotGesture.startedAt) / 1000);\n        touchShotGesture.charge = THREE.MathUtils.clamp(0.45 + held * 0.68, 0.45, 1);\n        power = touchShotGesture.charge;\n      } else {\n        power = pendingTouchShot?.power ?? 0.5;\n      }\n    } else {\n      power += powerDir * dt * 0.58; if (power > 1) { power = 1; powerDir = -1; } if (power < 0.12) { power = 0.12; powerDir = 1; }\n    }\n    $('#power i').style.height = `${power * 100}%`;"
+          if old not in text: raise SystemExit('power animation target missing')
+          text = text.replace(old, new, 1)
+
+          start = text.index("  const stick = $('#touchStick'); const knob = stick.querySelector('i'); let pointerId = null;")
+          end_marker = "  $('#touchHit').addEventListener('pointerdown', (event) => { event.preventDefault(); hitBuffer = 0.32; if (playerHit()) hitBuffer = 0; });"
+          end = text.index(end_marker, start) + len(end_marker)
+          replacement = "  const stick = $('#touchStick');\n  const knob = stick.querySelector('i');\n  const hitButton = $('#touchHit');\n  let movePointerId = null;\n  let stickCenter = { x: 0, y: 0 };\n\n  const placeFloatingStick = (x, y) => {\n    const size = stick.offsetWidth || 180;\n    const radius = size / 2;\n    const viewport = getViewportDimensions();\n    const safeX = THREE.MathUtils.clamp(x, radius + 10, Math.min(viewport.width * 0.52, viewport.width - radius - 10));\n    const safeY = THREE.MathUtils.clamp(y, radius + 10, viewport.height - radius - 10);\n    stickCenter = { x: safeX, y: safeY };\n    stick.style.left = `${safeX}px`;\n    stick.style.top = `${safeY}px`;\n    stick.style.right = 'auto';\n    stick.style.bottom = 'auto';\n    stick.classList.add('active');\n    knob.style.transform = 'translate(0,0)';\n    touchVector.x = touchVector.z = 0;\n  };\n\n  const updateFloatingStick = (event) => {\n    const max = (stick.offsetWidth || 180) * 0.37;\n    const dx = event.clientX - stickCenter.x;\n    const dy = event.clientY - stickCenter.y;\n    const len = Math.hypot(dx, dy) || 1;\n    const clamped = Math.min(len, max);\n    const nx = dx / len;\n    const ny = dy / len;\n    const curve = joystickCurve(clamped / max);\n    knob.style.transform = `translate(${nx * clamped}px,${ny * clamped}px)`;\n    touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1);\n    touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);\n  };\n\n  const clearFloatingStick = (event) => {\n    if (movePointerId === null || event && event.pointerId !== movePointerId) return;\n    movePointerId = null;\n    touchVector.x = touchVector.z = 0;\n    knob.style.transform = 'translate(0,0)';\n    stick.classList.remove('active');\n  };\n\n  document.addEventListener('pointerdown', (event) => {\n    if (!coarsePointer || appMode !== 'playing' || movePointerId !== null || event.pointerType === 'mouse') return;\n    const viewport = getViewportDimensions();\n    if (event.clientX > viewport.width * 0.55 || event.target.closest('button,select,.scoreboard,.hud-actions')) return;\n    event.preventDefault();\n    movePointerId = event.pointerId;\n    placeFloatingStick(event.clientX, event.clientY);\n  }, { passive: false });\n  document.addEventListener('pointermove', (event) => { if (event.pointerId === movePointerId) { event.preventDefault(); updateFloatingStick(event); } }, { passive: false });\n  document.addEventListener('pointerup', clearFloatingStick);\n  document.addEventListener('pointercancel', clearFloatingStick);\n\n  const updateShotGesture = (event) => {\n    const dx = event.clientX - touchShotGesture.startX;\n    const dy = event.clientY - touchShotGesture.startY;\n    touchShotGesture.aim = THREE.MathUtils.clamp(dx / 92, -1, 1);\n    touchShotGesture.lob = THREE.MathUtils.clamp(-dy / 88, 0, 1);\n    hitButton.style.setProperty('--aim-x', `${touchShotGesture.aim * 18}px`);\n  };\n\n  hitButton.addEventListener('pointerdown', (event) => {\n    event.preventDefault();\n    touchShotGesture = { active: true, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startedAt: performance.now(), aim: 0, lob: 0, charge: 0.45 };\n    hitButton.setPointerCapture?.(event.pointerId);\n    hitButton.classList.add('charging');\n  });\n  hitButton.addEventListener('pointermove', (event) => { if (touchShotGesture.active && event.pointerId === touchShotGesture.pointerId) updateShotGesture(event); });\n  const releaseShot = (event) => {\n    if (!touchShotGesture.active || event.pointerId !== touchShotGesture.pointerId) return;\n    updateShotGesture(event);\n    const held = Math.max(0, (performance.now() - touchShotGesture.startedAt) / 1000);\n    const shotPower = THREE.MathUtils.clamp(0.45 + held * 0.68, 0.45, 1);\n    pendingTouchShot = { power: shotPower, aim: touchShotGesture.aim, lob: touchShotGesture.lob };\n    touchShotGesture.active = false;\n    touchShotGesture.pointerId = null;\n    hitButton.classList.remove('charging');\n    hitButton.style.removeProperty('--aim-x');\n    hitBuffer = 0.42;\n    if (playerHit()) hitBuffer = 0;\n  };\n  hitButton.addEventListener('pointerup', releaseShot);\n  hitButton.addEventListener('pointercancel', (event) => {\n    if (touchShotGesture.active && event.pointerId === touchShotGesture.pointerId) {\n      touchShotGesture.active = false; touchShotGesture.pointerId = null; hitButton.classList.remove('charging'); hitButton.style.removeProperty('--aim-x');\n    }\n  });"
+          text = text[:start] + replacement + text[end:]
+          main.write_text(text)
+
+          css_path = Path('src/style.css')
+          css = css_path.read_text()
+          old = ".stick{pointer-events:auto;position:relative;width:202px;height:202px;"
+          new = ".stick{pointer-events:none;position:fixed;left:110px;top:70%;transform:translate(-50%,-50%);opacity:0;width:202px;height:202px;"
+          if old not in css: raise SystemExit('stick css target missing')
+          css = css.replace(old, new, 1)
+          old = "backdrop-filter:none;-webkit-backdrop-filter:none;touch-action:none}.stick::before"
+          new = "backdrop-filter:none;-webkit-backdrop-filter:none;touch-action:none;transition:opacity .1s ease}.stick.active{opacity:.58}.stick::before"
+          if old not in css: raise SystemExit('stick active css target missing')
+          css = css.replace(old, new, 1)
+          old = "#touchHit{pointer-events:auto;width:116px;height:116px;"
+          new = "#touchHit{--aim-x:0px;pointer-events:auto;width:116px;height:116px;"
+          if old not in css: raise SystemExit('hit css target missing')
+          css = css.replace(old, new, 1)
+          old = "box-shadow:0 0 42px rgba(200,255,52,.46),0 18px 38px rgba(0,0,0,.3);touch-action:none}"
+          new = "box-shadow:calc(var(--aim-x) * .12) 0 42px rgba(200,255,52,.46),0 18px 38px rgba(0,0,0,.3);touch-action:none;transition:transform .08s ease,filter .08s ease}#touchHit.charging{transform:scale(.96);filter:brightness(1.08)}"
+          if old not in css: raise SystemExit('hit charging css target missing')
+          css = css.replace(old, new, 1)
+          css_path.write_text(css)
+
+          index = Path('index.html')
+          html = index.read_text()
+          old = "<div><kbd>F</kbd><span>Schermo intero</span></div>"
+          new = "<div><kbd>F</kbd><span>Schermo intero</span></div>\n        <div><kbd>TOUCH</kbd><span>Appoggia e trascina per muoverti</span></div>\n        <div><kbd>HIT</kbd><span>Tieni = forza · ←/→ mira · ↑ lob</span></div>"
+          if old not in html: raise SystemExit('tutorial control target missing')
+          html = html.replace(old, new, 1)
+          old = "<p>Nel servizio la palla rimbalza prima del colpo e viene indirizzata in diagonale. Durante lo scambio puoi usare i vetri dopo il primo rimbalzo.</p>"
+          new = "<p>Su touch il joystick appare dove appoggi il dito nella metà sinistra. Sul tasto HIT: un tap dà un colpo controllato; tieni premuto per aumentare la forza, trascina a destra/sinistra per mirare e verso l’alto per il lob. Rilascia per colpire.</p>"
+          if old not in html: raise SystemExit('tutorial paragraph target missing')
+          html = html.replace(old, new, 1)
+          index.write_text(html)
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate tests and build
+        run: npm run check
+
+      - name: Simulate safe CPU serves
+        run: |
+          node --input-type=module <<'JS'
+          import { computeSafeRallyVelocity } from './src/physics.js';
+          const gravity = 9.81;
+          const radius = 0.105;
+          const netHeight = 0.88;
+          for (const sign of [-1, 1]) {
+            const start = { x: sign * 2.15 + 0.4, y: 0.72, z: -7.5 };
+            const target = { x: -sign * 1.55, y: radius, z: 4.4 };
+            const { velocity, flightTime } = computeSafeRallyVelocity({ start, target, horizontalSpeed: 13.2, liftHint: 4.1, netHeight, ballRadius: radius, clearanceMargin: 0.1 });
+            const fraction = Math.abs(start.z) / (Math.abs(start.z) + Math.abs(target.z));
+            const tNet = flightTime * fraction;
+            const yNet = start.y + velocity.y * tNet - 0.5 * gravity * tNet * tNet;
+            if (yNet <= netHeight + radius + 0.06) throw new Error(`CPU serve too low: ${yNet}`);
+            if (Math.abs(target.x) >= 5 || Math.abs(target.z) > 6.95 || target.z <= 0) throw new Error('CPU serve target outside service box');
+          }
+          console.log('CPU serve simulation: both service sides clear the net and land inside the diagonal box.');
+          JS
+
+      - name: Verify touch control implementation
+        run: |
+          grep -F "function launchService(target, hitter)" src/main.js
+          grep -F "placeFloatingStick(event.clientX, event.clientY)" src/main.js
+          grep -F "pendingTouchShot = { power: shotPower" src/main.js
+          grep -F "touchShotGesture.aim" src/main.js
+          grep -F ".stick.active{opacity:.58}" src/style.css
+          grep -F "Tieni = forza" index.html
+
+      - name: Commit validated controls
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.js src/style.css index.html
+          git commit -m "Improve touch aiming and stabilize CPU serves"
+          git push
