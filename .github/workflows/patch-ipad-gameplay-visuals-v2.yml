@@ -1,0 +1,189 @@
+name: Validated iPad gameplay and visuals patch v2
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.event.head_commit.message == 'Run validated iPad gameplay and visuals patch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply upgrades safely
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          main_path = Path('src/main.js')
+          css_path = Path('src/style.css')
+          test_path = Path('tests/physics.test.js')
+          text = main_path.read_text()
+          css = css_path.read_text()
+          tests = test_path.read_text()
+
+          def once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, got {count}')
+              return source.replace(old, new, 1)
+
+          if "import { createAthlete } from './athlete.js';" not in text:
+              text = once(text, "import { computeSafeRallyVelocity } from './physics.js';", "import { computeSafeRallyVelocity } from './physics.js';\nimport { createAthlete } from './athlete.js';", 'athlete import')
+
+          text = once(text, """const DIFFICULTY = {
+            rookie: { speed: 4.55, reaction: 0.24, accuracy: 1.75, power: 0.92, label: 'ROOKIE' },
+            pro: { speed: 5.25, reaction: 0.14, accuracy: 1.0, power: 1.03, label: 'PRO' },
+            elite: { speed: 6.05, reaction: 0.08, accuracy: 0.52, power: 1.12, label: 'ELITE' }
+          };""", """const DIFFICULTY = {
+            rookie: { speed: 3.9, reaction: 0.34, accuracy: 2.5, power: 0.82, label: 'ROOKIE' },
+            pro: { speed: 4.6, reaction: 0.22, accuracy: 1.5, power: 0.94, label: 'PRO' },
+            elite: { speed: 5.4, reaction: 0.13, accuracy: 0.85, power: 1.04, label: 'ELITE' }
+          };""", 'difficulty')
+          text = once(text, "difficulty: localStorage.getItem('padelNovaDifficulty') || 'pro',", "difficulty: localStorage.getItem('padelNovaDifficulty') || 'rookie',", 'default difficulty')
+          text = once(text, "difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'pro';", "difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'rookie';", 'difficulty fallback')
+          text = once(text, "const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: 5.85, group: null, racket: null, swing: 0 };", "const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: 6.8, group: null, racket: null, swing: 0 };", 'player speed')
+
+          wrapper = """function makePlayer(color, isAI = false) {
+            return createAthlete({ THREE, scene, mat, color, isAI });
+          }
+
+          function makeBall()"""
+          text, n = re.subn(r"function makePlayer\(color, isAI = false\) \{.*?\n\}\n\nfunction makeBall\(\)", wrapper, text, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'makePlayer wrapper: expected 1 match, got {n}')
+
+          ball_pattern = re.compile(r"  ball\.mesh = new THREE\.Mesh\(new THREE\.SphereGeometry\(ball\.radius, 24, 18\).*?for \(let i = 0; i < 7; i \+= 1\) \{.*?\n  \}", re.S)
+          ball_new = """  ball.mesh = new THREE.Mesh(new THREE.SphereGeometry(ball.radius, 26, 20), new THREE.MeshStandardMaterial({ map: texture, roughness: 0.56, emissive: 0x314500, emissiveIntensity: 0.14 }));
+            ball.mesh.castShadow = true; scene.add(ball.mesh);
+            const trailMat = new THREE.MeshBasicMaterial({ color: 0xeaff76, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending });
+            for (let i = 0; i < 12; i += 1) {
+              const scale = Math.max(0.24, 0.92 - i * 0.055);
+              const t = new THREE.Mesh(new THREE.SphereGeometry(ball.radius * scale, 12, 9), trailMat.clone());
+              t.material.opacity = Math.max(0.02, 0.3 - i * 0.022); scene.add(t); ball.trail.push(t);
+            }"""
+          text, n = ball_pattern.subn(ball_new, text, count=1)
+          if n != 1:
+              raise SystemExit(f'ball trail: expected 1 match, got {n}')
+
+          text = once(text, "if (ball.pos.z > 0 && distance < 1.35 && ball.pos.y < 2.75) {", "if (ball.pos.z > 0 && distance < 1.62 && ball.pos.y < 3.0) {", 'player reach')
+          text = once(text, """  const error = level.accuracy; const targetX = THREE.MathUtils.clamp(player.pos.x * 0.35 + (Math.random() - 0.5) * error * 3, -4.1, 4.1);
+            const aggressive = ball.pos.y > 1.5 ? 1 : 0; const targetZ = 6.2 + Math.random() * 2.0;
+            launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), (10.1 + Math.random() * 2.2 + aggressive * 1.9) * level.power, 2.7 + Math.random() * 1.2 + aggressive * 0.7, 'ai');""", """  const error = level.accuracy; const targetX = THREE.MathUtils.clamp(player.pos.x * 0.32 + (Math.random() - 0.5) * error * 3.4, -4.1, 4.1);
+            const aggressive = ball.pos.y > 1.5 ? 1 : 0; const targetZ = 6.6 + Math.random() * 1.6;
+            launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), (8.8 + Math.random() * 1.5 + aggressive * 1.0) * level.power, 3.15 + Math.random() * 1.0 + aggressive * 0.45, 'ai');""", 'AI shots')
+
+          animate = """function animateActor(actor, dt, isAI) {
+            actor.group.position.lerp(actor.pos, 1 - Math.exp(-12 * dt));
+            const speedFactor = Math.min(1, actor.vel.length() / 3.2);
+            const gait = Math.sin(performance.now() * 0.012) * speedFactor;
+            actor.group.position.y = Math.abs(gait) * 0.028;
+            const legs = actor.group.userData.legs;
+            if (legs) { legs[0].rotation.x = gait * 0.38; legs[1].rotation.x = -gait * 0.38; }
+            const anchors = actor.group.userData.legAnchors;
+            if (anchors) {
+              anchors[0].lower.rotation.x = Math.max(0, -gait) * 0.3;
+              anchors[1].lower.rotation.x = Math.max(0, gait) * 0.3;
+              anchors[0].shoe.rotation.x = Math.max(0, -gait) * 0.16;
+              anchors[1].shoe.rotation.x = Math.max(0, gait) * 0.16;
+            }
+            const arms = actor.group.userData.arms;
+            if (arms) arms[0].rotation.x = -gait * 0.22;
+            if (actor.swing > 0) {
+              actor.swing = Math.max(0, actor.swing - dt * 4.8);
+              const s = Math.sin((1 - actor.swing) * Math.PI);
+              actor.racket.rotation.z = (isAI ? 1 : -1) * s * 1.18;
+              actor.racket.rotation.y = s * 0.42;
+              if (arms) arms[1].rotation.x = -1.08 * s;
+            } else {
+              actor.racket.rotation.z = THREE.MathUtils.lerp(actor.racket.rotation.z, 0, 0.18);
+              actor.racket.rotation.y = THREE.MathUtils.lerp(actor.racket.rotation.y, 0, 0.18);
+              if (arms) arms[1].rotation.x = THREE.MathUtils.lerp(arms[1].rotation.x, 0.16, 0.18);
+            }
+          }
+
+          function updatePlayer(dt)"""
+          text, n = re.subn(r"function animateActor\(actor, dt, isAI\) \{.*?\n\}\n\nfunction updatePlayer\(dt\)", animate, text, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'animate actor: expected 1 match, got {n}')
+
+          text = once(text, """  const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight'); const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(player.speed * (sprint ? 1.34 : 1));
+            player.vel.lerp(desired, 1 - Math.exp(-10 * dt)); player.pos.addScaledVector(player.vel, dt); clampActor(player, 'player');""", """  const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+            const mobileBoost = coarsePointer ? 1.12 : 1;
+            const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(player.speed * mobileBoost * (sprint ? 1.24 : 1));
+            player.vel.lerp(desired, 1 - Math.exp(-16 * dt)); player.pos.addScaledVector(player.vel, dt); clampActor(player, 'player');""", 'movement')
+          text = once(text, "const aiReach = settings.difficulty === 'rookie' ? 1.75 : settings.difficulty === 'pro' ? 1.95 : 2.1;", "const aiReach = settings.difficulty === 'rookie' ? 1.58 : settings.difficulty === 'pro' ? 1.78 : 1.98;", 'AI reach')
+
+          trail = """function updateTrail(active) {
+            for (let i = ball.trail.length - 1; i > 0; i -= 1) ball.trail[i].position.lerp(ball.trail[i - 1].position, 0.52);
+            if (ball.trail[0]) ball.trail[0].position.lerp(ball.pos, 0.64);
+            for (let i = 0; i < ball.trail.length; i += 1) {
+              const t = ball.trail[i];
+              t.visible = active && !reducedMotion;
+              if (t.material) t.material.opacity = active ? Math.max(0.02, 0.3 - i * 0.022) : 0;
+            }
+          }"""
+          text, n = re.subn(r"function updateTrail\(active\) \{.*?\n\}", trail, text, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'updateTrail: expected 1 match, got {n}')
+
+          stick = """  const updateStick = (event) => {
+            const r = stick.getBoundingClientRect();
+            const dx = event.clientX - (r.left + r.width / 2); const dy = event.clientY - (r.top + r.height / 2);
+            const max = r.width * 0.34; const len = Math.hypot(dx, dy) || 1; const clamped = Math.min(len, max);
+            const nx = dx / len; const ny = dy / len; const px = nx * clamped; const py = ny * clamped;
+            const normalized = clamped / max; const curve = normalized * normalized * (3 - 2 * normalized);
+            knob.style.transform = `translate(${px}px,${py}px)`;
+            touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1); touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
+          };"""
+          text, n = re.subn(r"  const updateStick = \(event\) => \{.*?\n  \};(?=\n  stick\.addEventListener\('pointerdown')", stick, text, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f'joystick logic: expected 1 match, got {n}')
+
+          css = once(css, "#touch{position:fixed;inset:auto 0 var(--safe-bottom) 0;z-index:15;pointer-events:none;padding:0 var(--safe-left);justify-content:space-between;align-items:end}.stick{pointer-events:auto;position:relative;width:126px;height:126px;border-radius:50%;border:1px solid #ffffff18;background:radial-gradient(circle,#ffffff08 0 28%,#0710149a 29% 100%);backdrop-filter:blur(9px);touch-action:none}.stick i{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px;border-radius:50%;background:#ffffff12;border:1px solid #ffffff20;transform:translate(0,0)}#touchHit{pointer-events:auto;width:88px;height:88px;border-radius:50%;border:1px solid #e6ff9b;background:rgba(200,255,52,.88);color:#101508;font-weight:950;letter-spacing:.08em;box-shadow:0 0 32px #c8ff3444;touch-action:none}", "#touch{position:fixed;inset:auto 0 var(--safe-bottom) 0;z-index:15;pointer-events:none;padding:0 calc(var(--safe-left) + 2px);justify-content:space-between;align-items:end}.stick{pointer-events:auto;position:relative;width:164px;height:164px;border-radius:50%;border:1px solid #ffffff22;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14) 0 22%,rgba(255,255,255,.06) 23% 32%,rgba(7,16,20,.78) 33% 100%);box-shadow:0 16px 42px rgba(0,0,0,.26),inset 0 0 28px rgba(255,255,255,.05);backdrop-filter:blur(12px);touch-action:none}.stick::after{content:'';position:absolute;inset:18px;border-radius:50%;border:1px solid rgba(255,255,255,.08)}.stick i{position:absolute;left:50%;top:50%;width:72px;height:72px;margin:-36px;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.32),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.26);box-shadow:0 10px 28px rgba(0,0,0,.28);transform:translate(0,0)}#touchHit{pointer-events:auto;width:104px;height:104px;border-radius:50%;border:1px solid #f0ffb8;background:radial-gradient(circle at 35% 30%,rgba(250,255,214,.98),rgba(200,255,52,.92) 60%,rgba(168,215,46,.92));color:#101508;font-weight:950;letter-spacing:.08em;box-shadow:0 0 38px #c8ff3470,0 16px 32px rgba(0,0,0,.26);touch-action:none}", 'touch CSS')
+          css = once(css, ".stick{width:108px;height:108px}#touchHit{width:78px;height:78px}", ".stick{width:142px;height:142px}.stick i{width:64px;height:64px;margin:-32px}#touchHit{width:96px;height:96px}", 'small touch CSS')
+
+          tests = once(tests, """  rookie: { power: 0.92, accuracy: 1.75 },
+            pro: { power: 1.03, accuracy: 1.0 },
+            elite: { power: 1.12, accuracy: 0.52 }""", """  rookie: { power: 0.82, accuracy: 2.5 },
+            pro: { power: 0.94, accuracy: 1.5 },
+            elite: { power: 1.04, accuracy: 0.85 }""", 'simulation difficulty')
+          tests = once(tests, "x: clamp(playerX * 0.35 + (rnd() - 0.5) * level.accuracy * 3, -4.1, 4.1),", "x: clamp(playerX * 0.32 + (rnd() - 0.5) * level.accuracy * 3.4, -4.1, 4.1),", 'simulation x')
+          tests = once(tests, "z: 6.2 + rnd() * 2", "z: 6.6 + rnd() * 1.6", 'simulation z')
+          tests = once(tests, "speed = (10.1 + rnd() * 2.2 + aggressive * 1.9) * level.power;", "speed = (8.8 + rnd() * 1.5 + aggressive * 1.0) * level.power;", 'simulation speed')
+          tests = once(tests, "lift = 2.7 + rnd() * 1.2 + aggressive * 0.7;", "lift = 3.15 + rnd() * 1.0 + aggressive * 0.45;", 'simulation lift')
+
+          main_path.write_text(text)
+          css_path.write_text(css)
+          test_path.write_text(tests)
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate athlete module
+        run: node --check src/athlete.js
+
+      - name: Simulate match physics
+        run: node --test tests/physics.test.js
+
+      - name: Run full quality gate
+        run: npm run check
+
+      - name: Commit only after validation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.js src/style.css src/athlete.js tests/physics.test.js
+          git rm .github/workflows/patch-ipad-gameplay-visuals.yml .github/workflows/patch-ipad-gameplay-visuals-v2.yml
+          git commit -m "Improve iPad controls, difficulty, characters and ball trail"
+          git push
