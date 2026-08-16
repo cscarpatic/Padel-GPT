@@ -1,0 +1,157 @@
+name: Validated iOS landscape viewport fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ios-landscape-viewport-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Apply robust iOS landscape viewport fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path('src/main.js')
+          text = main.read_text()
+
+          old_animate = """function animate() {
+  requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);
+  pollGamepad();
+"""
+          new_animate = """function animate() {
+  requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);
+  const viewport = getViewportDimensions();
+  const expectedAspect = viewport.width / viewport.height;
+  if (Math.abs(camera.aspect - expectedAspect) > 0.015 || canvas.clientWidth !== viewport.width || canvas.clientHeight !== viewport.height) resizeRenderer();
+  pollGamepad();
+"""
+          if old_animate not in text:
+            raise SystemExit('animate target missing')
+          text = text.replace(old_animate, new_animate, 1)
+
+          old_resize = """function resizeRenderer() {
+  if (!renderer || !camera || !composer) return; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight);
+}
+"""
+          new_resize = """function getViewportDimensions() {
+  const root = document.documentElement;
+  const width = Math.max(1, Math.round(root.clientWidth || window.innerWidth || 1));
+  const height = Math.max(1, Math.round(root.clientHeight || window.innerHeight || 1));
+  return { width, height };
+}
+
+function resizeRenderer() {
+  if (!renderer || !camera || !composer) return;
+  const { width, height } = getViewportDimensions();
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height, true);
+  renderer.setViewport(0, 0, width, height);
+  composer.setSize(width, height);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+}
+
+function scheduleRendererResize() {
+  [0, 80, 180, 360, 700].forEach((delay) => setTimeout(resizeRenderer, delay));
+}
+"""
+          if old_resize not in text:
+            raise SystemExit('resize target missing')
+          text = text.replace(old_resize, new_resize, 1)
+
+          old_setup = """function setupEvents() {
+  addEventListener('resize', resizeRenderer);
+"""
+          new_setup = """function setupEvents() {
+  addEventListener('resize', scheduleRendererResize);
+  addEventListener('orientationchange', scheduleRendererResize);
+  visualViewport?.addEventListener('resize', scheduleRendererResize);
+  visualViewport?.addEventListener('scroll', scheduleRendererResize);
+  screen.orientation?.addEventListener?.('change', scheduleRendererResize);
+"""
+          if old_setup not in text:
+            raise SystemExit('setupEvents target missing')
+          text = text.replace(old_setup, new_setup, 1)
+
+          old_immersive = """  try { await screen.orientation?.lock?.('landscape'); } catch {}
+  setTimeout(() => window.scrollTo(0, 1), 60);
+}
+"""
+          new_immersive = """  try { await screen.orientation?.lock?.('landscape'); } catch {}
+  setTimeout(() => window.scrollTo(0, 1), 60);
+  scheduleRendererResize();
+}
+"""
+          if old_immersive not in text:
+            raise SystemExit('immersive target missing')
+          text = text.replace(old_immersive, new_immersive, 1)
+
+          main.write_text(text)
+
+          style = Path('src/style.css')
+          css = style.read_text()
+          css = css.replace(
+            "html,body{margin:0;width:100%;height:100%;min-height:100dvh;overflow:hidden;overscroll-behavior:none;",
+            "html,body{margin:0;width:100%;height:100%;min-height:100%;overflow:hidden;overscroll-behavior:none;",
+            1
+          )
+          css = css.replace(
+            "body{position:fixed;inset:0;width:100dvw;height:100dvh;user-select:none;",
+            "body{position:fixed;inset:0;width:auto;height:auto;user-select:none;",
+            1
+          )
+          css = css.replace(
+            "#game{position:fixed;inset:0;width:100dvw;height:100dvh;display:block;touch-action:none;background:#07131d}",
+            "#game{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#07131d}",
+            1
+          )
+          css = css.replace(
+            "@supports(height:100dvh){html,body,#game,.screen,#hud{height:100dvh}}",
+            "@supports(height:100dvh){html,body,#game,.screen,#hud{height:100%}}",
+            1
+          )
+          style.write_text(css)
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate tests and build
+        run: npm run check
+
+      - name: Verify viewport fix
+        run: |
+          grep -F "function getViewportDimensions()" src/main.js
+          grep -F "addEventListener('orientationchange', scheduleRendererResize)" src/main.js
+          grep -F "visualViewport?.addEventListener('resize', scheduleRendererResize)" src/main.js
+          grep -F "renderer.setViewport(0, 0, width, height)" src/main.js
+          grep -F "canvas.clientWidth !== viewport.width" src/main.js
+          grep -F "body{position:fixed;inset:0;width:auto;height:auto" src/style.css
+          grep -F "#game{position:fixed;inset:0;width:100%;height:100%" src/style.css
+
+      - name: Commit validated fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.js src/style.css
+          git commit -m "Fix iOS landscape renderer sizing"
+          git push
