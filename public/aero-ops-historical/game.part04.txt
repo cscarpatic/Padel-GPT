@@ -1,0 +1,121 @@
+.y += b.vy * dt; b.life -= dt; }
+    game.bullets = game.bullets.filter(b => b.life > 0 && b.y > -30);
+    for (const b of game.enemyBullets) { b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; }
+    game.enemyBullets = game.enemyBullets.filter(b => b.life > 0 && b.y < 580 && b.y > -30 && b.x > -30 && b.x < 990);
+  }
+
+  function updateEnemies(dt) {
+    const p = game.player;
+    for (const e of game.enemies) {
+      e.phase += dt * e.sway;
+      e.y += e.speed * dt;
+      e.x += Math.sin(e.phase) * 38 * dt;
+      e.shoot -= dt;
+      if (e.shoot <= 0 && e.y > 40 && e.y < p.y - 30) {
+        const a = Math.atan2(p.y - e.y, p.x - e.x);
+        game.enemyBullets.push({ x:e.x, y:e.y+10, vx:Math.cos(a)*265, vy:Math.sin(a)*265, life:2.7 });
+        e.shoot = rand(1.05,1.9);
+      }
+    }
+    game.enemies = game.enemies.filter(e => e.hp > 0 && e.y < 590);
+  }
+
+  function updateGroundTargets(dt) {
+    for (const t of game.targets) {
+      t.y += t.speed * dt;
+      t.flakCd -= dt;
+      if (t.flakCd <= 0 && t.y > 20 && t.y < 480) {
+        const baseChance = (t.ref.kind === 'flak' ? 1.65 : .72) * t.ref.defense * game.altitudeAA;
+        if (Math.random() < .38 * baseChance) spawnFlak(t.x + rand(-30,30), t.y + rand(-15,15));
+        t.flakCd = rand(.45,1.15) / baseChance;
+      }
+    }
+    game.targets = game.targets.filter(t => {
+      if (t.ref.destroyed) return false;
+      if (t.y > 620) { t.ref.spawned = false; return false; }
+      return true;
+    });
+  }
+
+  function spawnFlak(x, y) {
+    const p = game.player;
+    const a = Math.atan2(p.y - y, p.x - x);
+    const speed = rand(135,190);
+    game.flak.push({ x, y, vx:Math.cos(a)*speed, vy:Math.sin(a)*speed, life:rand(1.1,1.8), burst:false });
+  }
+
+  function updateFlak(dt) {
+    for (const f of game.flak) {
+      f.x += f.vx * dt; f.y += f.vy * dt; f.life -= dt;
+      if (f.life <= 0 && !f.burst) { f.burst = true; explosion(f.x,f.y,26,'flak'); }
+    }
+    game.flak = game.flak.filter(f => f.life > 0);
+  }
+
+  function updateBombs(dt) {
+    for (const b of game.bombs) {
+      b.t += dt;
+      const q = clamp(b.t / b.duration, 0, 1);
+      b.x += (b.tx - b.x) * dt * 2.2;
+      b.y += (b.ty - b.y) * dt * 2.2;
+      if (q >= 1 && !b.hit) {
+        b.hit = true;
+        const radius = 84 * game.bombAccuracy;
+        explosion(b.tx,b.ty,radius,'bomb');
+        tone(55, .24, .08);
+        for (const t of game.targets) {
+          const d = dist(b.tx,b.ty,t.x,t.y);
+          if (d < radius + Math.max(t.w,t.h)*.35) {
+            const damage = d < radius*.55 ? 7 : 4;
+            damageTarget(t, damage, true);
+          }
+        }
+        for (const e of game.enemies) if (dist(b.tx,b.ty,e.x,e.y)<radius*.55) e.hp=0;
+      }
+    }
+    game.bombs = game.bombs.filter(b => !b.hit);
+  }
+
+  function updateExplosions(dt) {
+    for (const e of game.explosions) e.life -= dt;
+    game.explosions = game.explosions.filter(e => e.life > 0);
+  }
+
+  function updateParticles(dt) {
+    for (const p of game.particles) { p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt; }
+    game.particles = game.particles.filter(p => p.life > 0);
+  }
+
+  function collisions() {
+    const g = game, p = g.player;
+    for (const b of g.bullets) {
+      for (const e of g.enemies) {
+        if (e.hp > 0 && dist(b.x,b.y,e.x,e.y)<20) {
+          b.life=0; e.hp--; g.hits++;
+          spark(e.x,e.y);
+          if (e.hp<=0) { g.score += 150; g.destroyedAircraft++; explosion(e.x,e.y,30,'air'); }
+          break;
+        }
+      }
+      if (b.life<=0) continue;
+      for (const t of g.targets) {
+        if (!t.ref.destroyed && Math.abs(b.x-t.x)<t.w*.5 && Math.abs(b.y-t.y)<t.h*.5) {
+          b.life=0; g.hits++; damageTarget(t, .34, false); break;
+        }
+      }
+    }
+    for (const b of g.enemyBullets) {
+      if (b.life>0 && dist(b.x,b.y,p.x,p.y)<17) { b.life=0; damagePlayer(7); }
+    }
+    for (const f of g.flak) {
+      if (f.life>0 && dist(f.x,f.y,p.x,p.y)<19) { f.life=0; damagePlayer(11); explosion(f.x,f.y,28,'flak'); }
+    }
+    for (const e of g.explosions) {
+      if (!e.playerChecked && e.kind==='flak') {
+        e.playerChecked=true;
+        if (dist(e.x,e.y,p.x,p.y)<e.r*.7) damagePlayer(8);
+      }
+    }
+  }
+
+  function da
