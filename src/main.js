@@ -446,8 +446,8 @@ function updateServeAnimation(dt) {
     const k = (s.t - 0.24) / 0.22; ball.pos.y = THREE.MathUtils.lerp(ball.radius, 0.72, Math.sin(k * Math.PI / 2));
   } else if (!s.struck) {
     s.struck = true;
-    const targetX = serviceTargetSign * (s.server === 'ai' ? 1.55 : 1.85);
-    const targetZ = s.server === 'player' ? -4.4 : 4.4;
+    const targetX = serviceTargetSign * (s.server === 'ai' ? 1.45 : 1.85);
+    const targetZ = s.server === 'player' ? -4.4 : 6.2;
     const target = new THREE.Vector3(targetX, ball.radius, targetZ);
     launchService(target, s.server); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
     if (s.server === 'player') player.swing = 1; else ai.swing = 1; shake = reducedMotion ? 0 : 0.08; sound.tone('hit', 0.9); statusEl.textContent = 'SERVIZIO IN GIOCO';
@@ -460,11 +460,11 @@ function launchService(target, hitter) {
   const { velocity } = computeSafeRallyVelocity({
     start: ball.pos,
     target,
-    horizontalSpeed: cpuServe ? 18.0 : 13.8,
-    liftHint: cpuServe ? 2.35 : 4.1,
+    horizontalSpeed: cpuServe ? 30.0 : 13.8,
+    liftHint: cpuServe ? 1.5 : 4.1,
     netHeight: COURT.netH,
     ballRadius: ball.radius,
-    clearanceMargin: cpuServe ? 0.025 : 0.1
+    clearanceMargin: cpuServe ? 0.0 : 0.1
   });
   ball.vel.set(velocity.x, velocity.y, velocity.z);
   ball.spin.set(0, 0, -ball.vel.x * (cpuServe ? 0.08 : 0.16));
