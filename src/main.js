@@ -795,6 +795,9 @@ function pollGamepad() {
 
 function animate() {
   requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);
+  const viewport = getViewportDimensions();
+  const expectedAspect = viewport.width / viewport.height;
+  if (Math.abs(camera.aspect - expectedAspect) > 0.015 || canvas.clientWidth !== viewport.width || canvas.clientHeight !== viewport.height) resizeRenderer();
   pollGamepad();
   if (appMode === 'playing') {
     power += powerDir * dt * 0.58; if (power > 1) { power = 1; powerDir = -1; } if (power < 0.12) { power = 0.12; powerDir = 1; } $('#power i').style.height = `${power * 100}%`;
@@ -805,8 +808,27 @@ function animate() {
   updateCamera(dt); composer.render();
 }
 
+function getViewportDimensions() {
+  const root = document.documentElement;
+  const width = Math.max(1, Math.round(root.clientWidth || window.innerWidth || 1));
+  const height = Math.max(1, Math.round(root.clientHeight || window.innerHeight || 1));
+  return { width, height };
+}
+
 function resizeRenderer() {
-  if (!renderer || !camera || !composer) return; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight);
+  if (!renderer || !camera || !composer) return;
+  const { width, height } = getViewportDimensions();
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height, true);
+  renderer.setViewport(0, 0, width, height);
+  composer.setSize(width, height);
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+}
+
+function scheduleRendererResize() {
+  [0, 80, 180, 360, 700].forEach((delay) => setTimeout(resizeRenderer, delay));
 }
 
 async function enterImmersiveMode() {
@@ -821,6 +843,7 @@ async function enterImmersiveMode() {
   }
   try { await screen.orientation?.lock?.('landscape'); } catch {}
   setTimeout(() => window.scrollTo(0, 1), 60);
+  scheduleRendererResize();
 }
 
 function toggleFullscreen() {
@@ -829,7 +852,11 @@ function toggleFullscreen() {
 }
 
 function setupEvents() {
-  addEventListener('resize', resizeRenderer);
+  addEventListener('resize', scheduleRendererResize);
+  addEventListener('orientationchange', scheduleRendererResize);
+  visualViewport?.addEventListener('resize', scheduleRendererResize);
+  visualViewport?.addEventListener('scroll', scheduleRendererResize);
+  screen.orientation?.addEventListener?.('change', scheduleRendererResize);
   addEventListener('keydown', (event) => {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
     keys.add(event.code);
