@@ -1,0 +1,40 @@
+g>${accuracy}%</strong></div>
+      <div class="stat"><span>Caccia abbattuti</span><strong>${game.destroyedAircraft}</strong></div>`;
+    els.debriefObjectives.innerHTML=game.priorities.map(o=>`<div class="debrief-row"><span>${o.priority}. ${o.name}</span><strong>${o.destroyed?'Neutralizzato':'Non completato'}</strong></div>`).join('');
+    showScreen('debriefScreen');
+  }
+
+  function togglePause(){if(!game||game.ended||!game.running)return;game.paused=!game.paused;els.pause.classList.toggle('hidden',!game.paused);game.lastTime=performance.now();}
+  function abortMission(){if(game&&!game.ended)endMission(false,'Sortita interrotta dal pilota.');}
+
+  function tone(freq,duration,gain=.03){
+    if(!soundOn)return;
+    try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type='square';o.frequency.value=freq;g.gain.setValueAtTime(gain,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+duration);}catch{}
+  }
+
+  function rand(a,b){return a+Math.random()*(b-a);} function clamp(v,a,b){return Math.max(a,Math.min(b,v));} function dist(ax,ay,bx,by){return Math.hypot(ax-bx,ay-by);}
+
+  window.addEventListener('keydown',e=>{
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();
+    if(e.code==='KeyP'){togglePause();return;}
+    if(e.code==='KeyB' && !keys.has('KeyB'))dropBomb();
+    keys.add(e.code);
+  },{passive:false});
+  window.addEventListener('keyup',e=>keys.delete(e.code));
+  document.querySelectorAll('.touch-controls button').forEach(btn=>{
+    const code=btn.dataset.key;
+    const down=e=>{e.preventDefault(); if(code==='KeyB')dropBomb(); else keys.add(code);};
+    const up=e=>{e.preventDefault();keys.delete(code);};
+    btn.addEventListener('pointerdown',down);btn.addEventListener('pointerup',up);btn.addEventListener('pointercancel',up);btn.addEventListener('pointerleave',up);
+  });
+
+  document.getElementById('backToMissions').addEventListener('click',()=>showScreen('missionScreen'));
+  document.getElementById('startSortie').addEventListener('click',startSortie);
+  document.getElementById('abortMission').addEventListener('click',abortMission);
+  document.getElementById('retryMission').addEventListener('click',()=>openPlanning(missions.indexOf(selectedMission)));
+  document.getElementById('chooseMission').addEventListener('click',()=>showScreen('missionScreen'));
+  els.altitude.addEventListener('change',updateBriefing);els.loadout.addEventListener('change',updateBriefing);
+  els.soundToggle.addEventListener('click',()=>{soundOn=!soundOn;els.soundToggle.textContent=soundOn?'🔊 Audio':'🔇 Audio';els.soundToggle.setAttribute('aria-pressed',String(soundOn));});
+
+  renderMissionCards();
+})();
