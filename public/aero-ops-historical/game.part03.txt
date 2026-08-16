@@ -1,0 +1,119 @@
+s.objectiveStrip.innerHTML = game.priorities.map((t, i) => `<span class="objective-chip ${i===0?'active':''}" data-obj="${i}">${i+1}. ${t.name}</span>`).join('');
+    updateHud();
+  }
+
+  async function startSortie() {
+    makeGame();
+    showScreen('gameScreen');
+    resizeCanvasForHiDPI();
+    els.countdown.classList.remove('hidden');
+    for (const n of ['3','2','1','VIA']) {
+      els.countdownText.textContent = n;
+      await new Promise(r => setTimeout(r, n === 'VIA' ? 450 : 650));
+    }
+    els.countdown.classList.add('hidden');
+    game.running = true;
+    game.lastTime = performance.now();
+    cancelAnimationFrame(animationFrame);
+    animationFrame = requestAnimationFrame(loop);
+  }
+
+  function resizeCanvasForHiDPI() {
+    // Canvas logical size remains 960x540; CSS handles responsive scaling.
+  }
+
+  function loop(now) {
+    if (!game || game.ended) return;
+    const dt = Math.min(.033, (now - game.lastTime) / 1000 || .016);
+    game.lastTime = now;
+    if (!game.paused) update(dt);
+    draw();
+    animationFrame = requestAnimationFrame(loop);
+  }
+
+  function update(dt) {
+    const g = game;
+    g.elapsed += dt;
+    g.scroll += 105 * dt;
+    if (g.flash > 0) g.flash -= dt;
+
+    const p = g.player;
+    const speed = 250;
+    let dx = 0, dy = 0;
+    if (keys.has('ArrowLeft') || keys.has('KeyA')) dx -= 1;
+    if (keys.has('ArrowRight') || keys.has('KeyD')) dx += 1;
+    if (keys.has('ArrowUp') || keys.has('KeyW')) dy -= 1;
+    if (keys.has('ArrowDown') || keys.has('KeyS')) dy += 1;
+    const mag = Math.hypot(dx, dy) || 1;
+    p.x += dx / mag * speed * dt;
+    p.y += dy / mag * speed * dt;
+    p.x = clamp(p.x, 32, 928); p.y = clamp(p.y, 42, 505);
+    p.shootCd -= dt; p.invuln -= dt;
+
+    if (keys.has('Space')) shootPlayer();
+
+    g.spawnTimer -= dt;
+    if (g.spawnTimer <= 0) {
+      spawnEnemy();
+      g.spawnTimer = Math.max(.58, 1.2 - g.elapsed / 140) * rand(.75, 1.25);
+    }
+
+    g.targetSpawnTimer -= dt;
+    if (g.targetSpawnTimer <= 0) {
+      spawnNextObjective();
+      g.targetSpawnTimer = 9.5;
+    }
+
+    updateBullets(dt);
+    updateEnemies(dt);
+    updateGroundTargets(dt);
+    updateFlak(dt);
+    updateBombs(dt);
+    updateExplosions(dt);
+    updateParticles(dt);
+    collisions();
+    updateHud();
+
+    const timeLeft = g.mission.duration - g.elapsed;
+    const allObjectives = g.priorities.every(o => o.destroyed);
+    if (p.hp <= 0) endMission(false, 'Il tuo aereo è stato abbattuto.');
+    else if (allObjectives) endMission(true, 'Tutti gli obiettivi prioritari sono stati neutralizzati.');
+    else if (timeLeft <= 0) endMission(g.destroyedTargets >= 2, 'Tempo operativo esaurito.');
+  }
+
+  function shootPlayer() {
+    const p = game.player;
+    if (p.shootCd > 0 || p.ammo <= 0) return;
+    p.shootCd = .095; p.ammo -= 2; game.shots += 2;
+    game.bullets.push({ x: p.x - 7, y: p.y - 24, vy: -620, life: 1.1 }, { x: p.x + 7, y: p.y - 24, vy: -620, life: 1.1 });
+    tone(140, .028, .025);
+  }
+
+  function dropBomb() {
+    if (!game || !game.running || game.paused) return;
+    const p = game.player;
+    if (p.bombs <= 0) return;
+    p.bombs--;
+    const scatter = game.altitude === 'high' ? 70 : game.altitude === 'low' ? 26 : 45;
+    game.bombs.push({ x: p.x, y: p.y - 8, tx: p.x + rand(-scatter, scatter), ty: Math.max(105, p.y - 205 + rand(-scatter, scatter)), t: 0, duration: game.altitude === 'high' ? 1.05 : .82 });
+    tone(92, .08, .04);
+  }
+
+  function spawnEnemy() {
+    const g = game;
+    const typeRoll = Math.random();
+    const type = typeRoll < .68 ? 'fighter' : 'interceptor';
+    const x = rand(65, 895);
+    g.enemies.push({ x, y: -30, hp: type === 'fighter' ? 2 : 3, speed: type === 'fighter' ? rand(120,170) : rand(105,145), sway: rand(1.2,2.6), phase: rand(0,6), shoot: rand(.6,1.4), type });
+  }
+
+  function spawnNextObjective() {
+    const next = game.priorities.find(o => !o.spawned && !o.destroyed);
+    if (!next) return;
+    next.spawned = true;
+    const t = { ref: next, x: rand(145, 815), y: -95, w: next.kind === 'bridge' ? 125 : 72, h: next.kind === 'airfield' ? 58 : 46, speed: 48, flakCd: rand(.4,1.2) };
+    game.targets.push(t);
+  }
+
+  function updateBullets(dt) {
+    for (const b of game.bullets) { b
