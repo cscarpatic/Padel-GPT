@@ -1,0 +1,90 @@
+magePlayer(amount) {
+    const p = game.player;
+    if (p.invuln>0) return;
+    p.hp = Math.max(0,p.hp-amount); p.invuln=.35; game.flash=.16; tone(72,.06,.05);
+  }
+
+  function damageTarget(t, amount, bomb) {
+    const ref = t.ref;
+    ref.currentHp -= amount;
+    spark(t.x+rand(-20,20),t.y+rand(-12,12));
+    if (ref.currentHp<=0 && !ref.destroyed) {
+      ref.destroyed = true;
+      game.destroyedTargets++;
+      const mult = ref.priority===1?1.45:ref.priority===2?1.18:1;
+      const method = bomb ? 1 : .78;
+      game.score += Math.round(ref.points*mult*method);
+      explosion(t.x,t.y,64,'target');
+      if (ref.kind==='flak') game.altitudeAA *= .7;
+      updateObjectiveChips();
+    }
+  }
+
+  function explosion(x,y,r,kind) {
+    game.explosions.push({ x,y,r,kind,life:.55,maxLife:.55,playerChecked:false });
+    for(let i=0;i<12;i++) game.particles.push({x,y,vx:rand(-110,110),vy:rand(-110,110),life:rand(.25,.7)});
+  }
+  function spark(x,y) { for(let i=0;i<4;i++) game.particles.push({x,y,vx:rand(-90,90),vy:rand(-90,90),life:rand(.12,.3)}); }
+
+  function updateObjectiveChips() {
+    const chips=[...els.objectiveStrip.querySelectorAll('.objective-chip')];
+    game.priorities.forEach((o,i)=>{
+      chips[i].classList.toggle('done',o.destroyed);
+      chips[i].classList.toggle('active',!o.destroyed && game.priorities.slice(0,i).every(x=>x.destroyed));
+    });
+  }
+
+  function updateHud() {
+    if (!game) return;
+    const p=game.player;
+    els.hp.textContent=`${Math.round(p.hp)}%`;
+    els.ammo.textContent=p.ammo;
+    els.bombs.textContent=p.bombs;
+    els.score.textContent=game.score.toLocaleString('it-IT');
+    els.time.textContent=Math.max(0,Math.ceil(game.mission.duration-game.elapsed));
+    const current=game.priorities.find(o=>!o.destroyed);
+    els.target.textContent=current?current.name:'Completato';
+  }
+
+  function draw() {
+    const g=game, p=g.player, m=g.mission;
+    ctx.clearRect(0,0,960,540);
+    drawWorld(m,g.scroll);
+    for (const t of g.targets) drawTarget(t);
+    for (const f of g.flak) drawFlak(f);
+    for (const e of g.enemies) drawEnemy(e);
+    for (const b of g.enemyBullets) { ctx.fillStyle='#ff9b74'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill(); }
+    for (const b of g.bullets) { ctx.strokeStyle='#d7f0ff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.y+10);ctx.stroke(); }
+    for (const b of g.bombs) drawBomb(b);
+    for (const e of g.explosions) drawExplosion(e);
+    for (const q of g.particles) { ctx.fillStyle=`rgba(255,190,90,${clamp(q.life*2,0,1)})`;ctx.fillRect(q.x,q.y,3,3); }
+    drawPlayer(p);
+    if (g.flash>0) { ctx.fillStyle='rgba(255,80,80,.16)';ctx.fillRect(0,0,960,540); }
+  }
+
+  function drawWorld(m, scroll) {
+    ctx.fillStyle=m.palette.sky;ctx.fillRect(0,0,960,540);
+    if (m.id!=='normandy') {
+      ctx.fillStyle=m.palette.water;ctx.fillRect(0,0,960,540);
+      ctx.strokeStyle='rgba(255,255,255,.13)';ctx.lineWidth=2;
+      for(let y=-40+(scroll%70);y<560;y+=70){ctx.beginPath();ctx.moveTo(0,y);for(let x=0;x<=960;x+=60)ctx.lineTo(x,y+Math.sin((x+y)*.02)*7);ctx.stroke();}
+      if(m.id==='pearl'){
+        ctx.fillStyle=m.palette.ground;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(180,0);ctx.lineTo(125,540);ctx.lineTo(0,540);ctx.closePath();ctx.fill();
+      }
+      if(m.id==='midway'){
+        ctx.fillStyle=m.palette.ground;ctx.beginPath();ctx.ellipse(800,120,120,45,.3,0,Math.PI*2);ctx.fill();
+      }
+    } else {
+      ctx.fillStyle=m.palette.ground;ctx.fillRect(0,0,960,540);
+      ctx.strokeStyle='rgba(220,205,150,.24)';ctx.lineWidth=14;ctx.setLineDash([24,20]);
+      ctx.beginPath();ctx.moveTo(120,540);ctx.bezierCurveTo(280,380,650,360,850,-50);ctx.stroke();ctx.setLineDash([]);
+      ctx.strokeStyle='rgba(70,85,55,.35)';ctx.lineWidth=3;
+      for(let x=80;x<960;x+=150){ctx.beginPath();ctx.moveTo(x+(scroll%80),0);ctx.lineTo(x-80+(scroll%80),540);ctx.stroke();}
+    }
+    ctx.fillStyle='rgba(0,0,0,.2)';ctx.fillRect(0,0,960,42);
+    ctx.fillStyle='#dfeaf3';ctx.font='700 14px system-ui';ctx.fillText(`${m.name.toUpperCase()} · ${m.date}`,18,27);
+  }
+
+  function drawPlayer(p) {
+    ctx.save();ctx.translate(p.x,p.y);
+    if(p.invuln>0 && Math.floor(p.invuln*20)%2
