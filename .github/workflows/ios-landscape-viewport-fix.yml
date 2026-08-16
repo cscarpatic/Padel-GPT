@@ -32,103 +32,38 @@ jobs:
           main = Path('src/main.js')
           text = main.read_text()
 
-          old_animate = """function animate() {
-  requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);
-  pollGamepad();
-"""
-          new_animate = """function animate() {
-  requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);
-  const viewport = getViewportDimensions();
-  const expectedAspect = viewport.width / viewport.height;
-  if (Math.abs(camera.aspect - expectedAspect) > 0.015 || canvas.clientWidth !== viewport.width || canvas.clientHeight !== viewport.height) resizeRenderer();
-  pollGamepad();
-"""
-          if old_animate not in text:
-            raise SystemExit('animate target missing')
-          text = text.replace(old_animate, new_animate, 1)
+          old = "function animate() {\n  requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);\n  pollGamepad();"
+          new = "function animate() {\n  requestAnimationFrame(animate); const dt = Math.min(clock.getDelta(), 0.033);\n  const viewport = getViewportDimensions();\n  const expectedAspect = viewport.width / viewport.height;\n  if (Math.abs(camera.aspect - expectedAspect) > 0.015 || canvas.clientWidth !== viewport.width || canvas.clientHeight !== viewport.height) resizeRenderer();\n  pollGamepad();"
+          if old not in text: raise SystemExit('animate target missing')
+          text = text.replace(old, new, 1)
 
-          old_resize = """function resizeRenderer() {
-  if (!renderer || !camera || !composer) return; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight);
-}
-"""
-          new_resize = """function getViewportDimensions() {
-  const root = document.documentElement;
-  const width = Math.max(1, Math.round(root.clientWidth || window.innerWidth || 1));
-  const height = Math.max(1, Math.round(root.clientHeight || window.innerHeight || 1));
-  return { width, height };
-}
+          old = "function resizeRenderer() {\n  if (!renderer || !camera || !composer) return; camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight, false); composer.setSize(innerWidth, innerHeight);\n}"
+          new = "function getViewportDimensions() {\n  const root = document.documentElement;\n  const width = Math.max(1, Math.round(root.clientWidth || window.innerWidth || 1));\n  const height = Math.max(1, Math.round(root.clientHeight || window.innerHeight || 1));\n  return { width, height };\n}\n\nfunction resizeRenderer() {\n  if (!renderer || !camera || !composer) return;\n  const { width, height } = getViewportDimensions();\n  camera.aspect = width / height;\n  camera.updateProjectionMatrix();\n  renderer.setSize(width, height, true);\n  renderer.setViewport(0, 0, width, height);\n  composer.setSize(width, height);\n  canvas.style.width = `${width}px`;\n  canvas.style.height = `${height}px`;\n}\n\nfunction scheduleRendererResize() {\n  [0, 80, 180, 360, 700].forEach((delay) => setTimeout(resizeRenderer, delay));\n}"
+          if old not in text: raise SystemExit('resize target missing')
+          text = text.replace(old, new, 1)
 
-function resizeRenderer() {
-  if (!renderer || !camera || !composer) return;
-  const { width, height } = getViewportDimensions();
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height, true);
-  renderer.setViewport(0, 0, width, height);
-  composer.setSize(width, height);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-}
+          old = "function setupEvents() {\n  addEventListener('resize', resizeRenderer);"
+          new = "function setupEvents() {\n  addEventListener('resize', scheduleRendererResize);\n  addEventListener('orientationchange', scheduleRendererResize);\n  visualViewport?.addEventListener('resize', scheduleRendererResize);\n  visualViewport?.addEventListener('scroll', scheduleRendererResize);\n  screen.orientation?.addEventListener?.('change', scheduleRendererResize);"
+          if old not in text: raise SystemExit('setupEvents target missing')
+          text = text.replace(old, new, 1)
 
-function scheduleRendererResize() {
-  [0, 80, 180, 360, 700].forEach((delay) => setTimeout(resizeRenderer, delay));
-}
-"""
-          if old_resize not in text:
-            raise SystemExit('resize target missing')
-          text = text.replace(old_resize, new_resize, 1)
-
-          old_setup = """function setupEvents() {
-  addEventListener('resize', resizeRenderer);
-"""
-          new_setup = """function setupEvents() {
-  addEventListener('resize', scheduleRendererResize);
-  addEventListener('orientationchange', scheduleRendererResize);
-  visualViewport?.addEventListener('resize', scheduleRendererResize);
-  visualViewport?.addEventListener('scroll', scheduleRendererResize);
-  screen.orientation?.addEventListener?.('change', scheduleRendererResize);
-"""
-          if old_setup not in text:
-            raise SystemExit('setupEvents target missing')
-          text = text.replace(old_setup, new_setup, 1)
-
-          old_immersive = """  try { await screen.orientation?.lock?.('landscape'); } catch {}
-  setTimeout(() => window.scrollTo(0, 1), 60);
-}
-"""
-          new_immersive = """  try { await screen.orientation?.lock?.('landscape'); } catch {}
-  setTimeout(() => window.scrollTo(0, 1), 60);
-  scheduleRendererResize();
-}
-"""
-          if old_immersive not in text:
-            raise SystemExit('immersive target missing')
-          text = text.replace(old_immersive, new_immersive, 1)
-
+          old = "  try { await screen.orientation?.lock?.('landscape'); } catch {}\n  setTimeout(() => window.scrollTo(0, 1), 60);\n}"
+          new = "  try { await screen.orientation?.lock?.('landscape'); } catch {}\n  setTimeout(() => window.scrollTo(0, 1), 60);\n  scheduleRendererResize();\n}"
+          if old not in text: raise SystemExit('immersive target missing')
+          text = text.replace(old, new, 1)
           main.write_text(text)
 
           style = Path('src/style.css')
           css = style.read_text()
-          css = css.replace(
-            "html,body{margin:0;width:100%;height:100%;min-height:100dvh;overflow:hidden;overscroll-behavior:none;",
-            "html,body{margin:0;width:100%;height:100%;min-height:100%;overflow:hidden;overscroll-behavior:none;",
-            1
-          )
-          css = css.replace(
-            "body{position:fixed;inset:0;width:100dvw;height:100dvh;user-select:none;",
-            "body{position:fixed;inset:0;width:auto;height:auto;user-select:none;",
-            1
-          )
-          css = css.replace(
-            "#game{position:fixed;inset:0;width:100dvw;height:100dvh;display:block;touch-action:none;background:#07131d}",
-            "#game{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#07131d}",
-            1
-          )
-          css = css.replace(
-            "@supports(height:100dvh){html,body,#game,.screen,#hud{height:100dvh}}",
-            "@supports(height:100dvh){html,body,#game,.screen,#hud{height:100%}}",
-            1
-          )
+          targets = [
+            ("html,body{margin:0;width:100%;height:100%;min-height:100dvh;overflow:hidden;overscroll-behavior:none;", "html,body{margin:0;width:100%;height:100%;min-height:100%;overflow:hidden;overscroll-behavior:none;"),
+            ("body{position:fixed;inset:0;width:100dvw;height:100dvh;user-select:none;", "body{position:fixed;inset:0;width:auto;height:auto;user-select:none;"),
+            ("#game{position:fixed;inset:0;width:100dvw;height:100dvh;display:block;touch-action:none;background:#07131d}", "#game{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#07131d}"),
+            ("@supports(height:100dvh){html,body,#game,.screen,#hud{height:100dvh}}", "@supports(height:100dvh){html,body,#game,.screen,#hud{height:100%}}")
+          ]
+          for old, new in targets:
+            if old not in css: raise SystemExit('CSS target missing: ' + old[:50])
+            css = css.replace(old, new, 1)
           style.write_text(css)
           PY
 
