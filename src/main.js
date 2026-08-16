@@ -585,7 +585,7 @@ function updateBall(dt) {
   const steps = 4; const sdt = dt / steps;
   for (let i = 0; i < steps; i += 1) {
     const previousZ = ball.pos.z;
-    ball.vel.y -= 9.81 * sdt; ball.vel.x += ball.spin.y * ball.vel.z * 0.00082; ball.spin.multiplyScalar(0.999); ball.pos.addScaledVector(ball.vel, sdt);
+    ball.vel.y -= 9.81 * sdt; ball.vel.x += ball.spin.y * ball.vel.z * 0.014 * sdt; ball.spin.multiplyScalar(0.999); ball.pos.addScaledVector(ball.vel, sdt);
 
     if ((previousZ > 0 && ball.pos.z <= 0) || (previousZ < 0 && ball.pos.z >= 0)) {
       // Crossing the net is tracked implicitly by side/bounce validation.
