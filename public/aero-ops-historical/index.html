@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101722" />
+  <title>Aero Ops: Historical Sorties</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">SIMULATORE ARCADE • 2D CANVAS</div>
+        <h1>Aero Ops: Historical Sorties</h1>
+      </div>
+      <button id="soundToggle" class="ghost" aria-pressed="true">🔊 Audio</button>
+    </header>
+
+    <main>
+      <section id="missionScreen" class="screen active">
+        <div class="hero panel">
+          <div>
+            <span class="badge">3 missioni storicamente ispirate</span>
+            <h2>Pianifica. Decolla. Sopravvivi.</h2>
+            <p>
+              Scegli una missione, ordina le zone-obiettivo e configura il profilo di volo.
+              Poi affronta caccia avversari, contraerea e bersagli terrestri/navali.
+            </p>
+          </div>
+          <div class="legend-card">
+            <strong>Comandi</strong>
+            <span>WASD / Frecce · movimento</span>
+            <span>SPAZIO · mitragliatrici</span>
+            <span>B · sgancia bomba</span>
+            <span>P · pausa</span>
+          </div>
+        </div>
+
+        <div id="missionGrid" class="mission-grid"></div>
+
+        <div class="note panel">
+          <strong>Nota storica.</strong> Il gioco usa eventi e luoghi reali come cornice, ma modelli di volo,
+          distanze, armamenti, danni e IA sono volutamente semplificati per un'esperienza arcade.
+        </div>
+      </section>
+
+      <section id="planningScreen" class="screen">
+        <div class="section-head">
+          <button id="backToMissions" class="ghost">← Missioni</button>
+          <div>
+            <div class="eyebrow">FASE 1 • PIANIFICAZIONE</div>
+            <h2 id="planTitle"></h2>
+          </div>
+        </div>
+
+        <div class="planning-grid">
+          <div class="panel">
+            <h3>Ordine delle zone da colpire</h3>
+            <p class="muted">La priorità 1 vale più punti, ma spesso è anche più difesa.</p>
+            <div id="priorityList" class="priority-list"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Profilo di sortita</h3>
+            <label class="field">
+              <span>Quota d'ingresso</span>
+              <select id="altitudeSelect">
+                <option value="low">Bassa — più precisa, più contraerea</option>
+                <option value="medium" selected>Media — bilanciata</option>
+                <option value="high">Alta — meno contraerea, bombe meno precise</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Assetto</span>
+              <select id="loadoutSelect">
+                <option value="balanced" selected>Bilanciato — 2 bombe / 320 colpi</option>
+                <option value="guns">Caccia — 1 bomba / 480 colpi</option>
+                <option value="bombs">Attacco — 4 bombe / 220 colpi</option>
+              </select>
+            </label>
+            <div id="briefingText" class="briefing"></div>
+            <button id="startSortie" class="primary wide">Decolla</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="gameScreen" class="screen">
+        <div class="hud panel">
+          <div><span>Integrità</span><strong id="hudHp">100%</strong></div>
+          <div><span>Munizioni</span><strong id="hudAmmo">320</strong></div>
+          <div><span>Bombe</span><strong id="hudBombs">2</strong></div>
+          <div><span>Punti</span><strong id="hudScore">0</strong></div>
+          <div><span>Tempo</span><strong id="hudTime">75</strong></div>
+          <div><span>Obiettivo</span><strong id="hudTarget">—</strong></div>
+        </div>
+
+        <div class="canvas-wrap panel">
+          <canvas id="gameCanvas" width="960" height="540" aria-label="Area di gioco"></canvas>
+          <div id="pauseOverlay" class="overlay hidden">
+            <div><strong>PAUSA</strong><span>Premi P per riprendere</span></div>
+          </div>
+          <div id="countdownOverlay" class="overlay hidden"><div id="countdownText">3</div></div>
+        </div>
+
+        <div class="game-footer">
+          <div id="objectiveStrip" class="objective-strip"></div>
+          <button id="abortMission" class="ghost danger">Interrompi missione</button>
+        </div>
+
+        <div class="touch-controls" aria-label="Controlli touch">
+          <div class="dpad">
+            <button data-key="ArrowUp">▲</button>
+            <div><button data-key="ArrowLeft">◀</button><button data-key="ArrowDown">▼</button><button data-key="ArrowRight">▶</button></div>
+          </div>
+          <div class="action-pad">
+            <button data-key="Space" class="fire">FUOCO</button>
+            <button data-key="KeyB" class="bomb">BOMBA</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="debriefScreen" class="screen">
+        <div class="debrief panel">
+          <div class="eyebrow">FASE 3 • DEBRIEFING</div>
+          <h2 id="debriefTitle">Missione completata</h2>
+          <p id="debriefSubtitle" class="muted"></p>
+          <div id="debriefStats" class="stats-grid"></div>
+          <div id="debriefObjectives" class="debrief-objectives"></div>
+          <div class="debrief-actions">
+            <button id="retryMission" class="primary">Ripeti missione</button>
+            <button id="chooseMission" class="ghost">Scegli altra missione</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="loader.js"></script>
+</body>
+</html>
