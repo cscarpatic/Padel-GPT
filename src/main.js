@@ -454,7 +454,7 @@ function updateServeAnimation(dt) {
     const k = (s.t - 0.24) / 0.22; ball.pos.y = THREE.MathUtils.lerp(ball.radius, 0.72, Math.sin(k * Math.PI / 2));
   } else if (!s.struck) {
     s.struck = true; const target = new THREE.Vector3(serviceTargetSign * 2.2, ball.radius, s.server === 'player' ? -4.65 : 4.65);
-    launchBallistic(target, 0.72, s.server, 4.5); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
+    launchBallistic(target, 0.78, s.server, 4.5); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
     if (s.server === 'player') player.swing = 1; else ai.swing = 1; shake = reducedMotion ? 0 : 0.08; sound.tone('hit', 0.9); statusEl.textContent = 'SERVIZIO IN GIOCO';
   }
   ball.mesh.position.copy(ball.pos);
