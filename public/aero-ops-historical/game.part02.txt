@@ -1,0 +1,92 @@
+ts'),
+    debriefObjectives: document.getElementById('debriefObjectives'),
+    soundToggle: document.getElementById('soundToggle')
+  };
+
+  const ctx = els.canvas.getContext('2d');
+  const keys = new Set();
+  let selectedMission = missions[0];
+  let priorities = [];
+  let game = null;
+  let animationFrame = null;
+  let soundOn = true;
+  let audioCtx = null;
+
+  function showScreen(id) {
+    els.screens.forEach(s => s.classList.toggle('active', s.id === id));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function renderMissionCards() {
+    els.missionGrid.innerHTML = missions.map((m, i) => `
+      <article class="mission-card panel">
+        <div class="mission-art" style="background:linear-gradient(135deg,${m.palette.sky},${m.palette.water})">
+          <div class="sun"></div><div class="plane">✈</div>
+        </div>
+        <div class="mission-body">
+          <div class="meta">${m.date} · ${m.theater}</div>
+          <h3>${m.name}</h3>
+          <p>${m.intro}</p>
+          <div class="mission-tags"><span>caccia</span><span>contraerea</span><span>bombe</span></div>
+          <button class="primary mission-select" data-index="${i}">Pianifica missione</button>
+        </div>
+      </article>
+    `).join('');
+    document.querySelectorAll('.mission-select').forEach(btn => btn.addEventListener('click', () => openPlanning(+btn.dataset.index)));
+  }
+
+  function openPlanning(index) {
+    selectedMission = missions[index];
+    priorities = selectedMission.targets.map((t, i) => ({ ...t, originalIndex: i }));
+    els.planTitle.textContent = `${selectedMission.name} — ${selectedMission.date}`;
+    renderPriorities();
+    updateBriefing();
+    showScreen('planningScreen');
+  }
+
+  function renderPriorities() {
+    els.priorityList.innerHTML = priorities.map((t, i) => `
+      <div class="priority-item">
+        <div class="priority-number">${i + 1}</div>
+        <div><strong>${t.name}</strong><small>${t.note}</small></div>
+        <div class="order-buttons">
+          <button data-dir="up" data-index="${i}" ${i===0?'disabled':''}>↑</button>
+          <button data-dir="down" data-index="${i}" ${i===priorities.length-1?'disabled':''}>↓</button>
+        </div>
+      </div>
+    `).join('');
+    els.priorityList.querySelectorAll('.order-buttons button').forEach(btn => btn.addEventListener('click', () => {
+      const i = +btn.dataset.index;
+      const j = btn.dataset.dir === 'up' ? i - 1 : i + 1;
+      [priorities[i], priorities[j]] = [priorities[j], priorities[i]];
+      renderPriorities();
+    }));
+  }
+
+  function updateBriefing() {
+    const altText = { low: 'Quota bassa: maggiore precisione delle bombe, ma più fuoco contraereo.', medium: 'Quota media: profilo equilibrato.', high: 'Quota alta: meno fuoco AA, ma dispersione maggiore delle bombe.' }[els.altitude.value];
+    const loadText = { balanced: '2 bombe e 320 colpi.', guns: '1 bomba e 480 colpi.', bombs: '4 bombe e 220 colpi.' }[els.loadout.value];
+    els.briefing.innerHTML = `<strong>${selectedMission.side}</strong><br>${selectedMission.historical}<br><br>${altText}<br>${loadText}`;
+  }
+
+  function makeGame() {
+    const load = {
+      balanced: { bombs: 2, ammo: 320 },
+      guns: { bombs: 1, ammo: 480 },
+      bombs: { bombs: 4, ammo: 220 }
+    }[els.loadout.value];
+    const altitude = els.altitude.value;
+    game = {
+      running: false, paused: false, ended: false,
+      mission: selectedMission,
+      priorities: priorities.map((t, i) => ({ ...t, priority: i + 1, currentHp: t.hp, spawned: false, destroyed: false })),
+      altitude,
+      altitudeAA: altitude === 'low' ? 1.25 : altitude === 'high' ? .72 : 1,
+      bombAccuracy: altitude === 'low' ? 1.12 : altitude === 'high' ? .78 : 1,
+      player: { x: 480, y: 430, vx: 0, vy: 0, hp: 100, ammo: load.ammo, bombs: load.bombs, shootCd: 0, invuln: 0 },
+      bullets: [], enemies: [], enemyBullets: [], flak: [], bombs: [], explosions: [], targets: [], particles: [],
+      score: 0, elapsed: 0, lastTime: performance.now(), spawnTimer: 0, targetSpawnTimer: 2, shots: 0, hits: 0,
+      destroyedAircraft: 0, destroyedTargets: 0, scroll: 0, flash: 0,
+      originalBombs: load.bombs, originalAmmo: load.ammo
+    };
+    el
