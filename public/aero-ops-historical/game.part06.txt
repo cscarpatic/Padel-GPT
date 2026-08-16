@@ -1,0 +1,44 @@
+===0)ctx.globalAlpha=.4;
+    ctx.fillStyle='#e7edf3';ctx.strokeStyle='#1c2935';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,-25);ctx.lineTo(10,-6);ctx.lineTo(35,5);ctx.lineTo(35,11);ctx.lineTo(9,7);ctx.lineTo(6,24);ctx.lineTo(-6,24);ctx.lineTo(-9,7);ctx.lineTo(-35,11);ctx.lineTo(-35,5);ctx.lineTo(-10,-6);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle='#6d8193';ctx.fillRect(-4,-13,8,14);ctx.restore();
+  }
+  function drawEnemy(e) {
+    ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.PI);
+    ctx.fillStyle=e.type==='fighter'?'#cf775c':'#d69c62';ctx.strokeStyle='#3b251f';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,-18);ctx.lineTo(8,-2);ctx.lineTo(25,5);ctx.lineTo(22,10);ctx.lineTo(5,6);ctx.lineTo(4,18);ctx.lineTo(-4,18);ctx.lineTo(-5,6);ctx.lineTo(-22,10);ctx.lineTo(-25,5);ctx.lineTo(-8,-2);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+  }
+  function drawTarget(t) {
+    const ref=t.ref;ctx.save();ctx.translate(t.x,t.y);
+    ctx.strokeStyle='rgba(255,255,255,.55)';ctx.setLineDash([6,5]);ctx.strokeRect(-t.w*.62,-t.h*.68,t.w*1.24,t.h*1.36);ctx.setLineDash([]);
+    ctx.fillStyle='#38434b';ctx.strokeStyle='#1c242a';ctx.lineWidth=2;
+    if(ref.kind==='airfield'){
+      ctx.fillStyle='#545c5a';ctx.fillRect(-t.w/2,-t.h/2,t.w,t.h);ctx.fillStyle='#c9c2a9';ctx.fillRect(-t.w*.42,-4,t.w*.84,8);
+    } else if(ref.kind==='bridge'){
+      ctx.fillStyle='#827c69';ctx.fillRect(-t.w/2,-6,t.w,12);for(let x=-t.w/2;x<t.w/2;x+=24)ctx.fillRect(x,-15,5,30);
+    } else if(ref.kind==='armor'){
+      ctx.fillStyle='#596347';for(let i=-1;i<=1;i++){ctx.fillRect(i*26-10,-9,20,18);ctx.fillRect(i*26-2,-2,18,4);}
+    } else if(ref.kind==='flak'){
+      ctx.fillStyle='#4a5142';ctx.beginPath();ctx.arc(0,0,19,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.strokeStyle='#1d231d';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-30);ctx.stroke();
+    } else {
+      const w=ref.kind==='carrier'?86:68;ctx.fillStyle=ref.kind==='carrier'?'#59666c':'#657178';ctx.beginPath();ctx.moveTo(-w/2,-12);ctx.lineTo(w/2-6,-12);ctx.lineTo(w/2,0);ctx.lineTo(w/2-6,12);ctx.lineTo(-w/2,12);ctx.closePath();ctx.fill();ctx.stroke();if(ref.kind==='carrier'){ctx.fillStyle='#444f55';ctx.fillRect(-22,-20,44,40);ctx.fillStyle='#9aa3a7';ctx.fillRect(-18,-2,36,4);}
+    }
+    const hp=clamp(ref.currentHp/ref.hp,0,1);ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(-38,-t.h*.75-12,76,6);ctx.fillStyle=hp>.5?'#77dd9c':'#ff8e72';ctx.fillRect(-38,-t.h*.75-12,76*hp,6);
+    ctx.fillStyle='#fff';ctx.font='700 11px system-ui';ctx.textAlign='center';ctx.fillText(`${ref.priority}. ${ref.name}`,0,t.h*.75+24);ctx.restore();
+  }
+  function drawFlak(f){ctx.fillStyle='#ffd18a';ctx.beginPath();ctx.arc(f.x,f.y,4,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,205,138,.35)';ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(f.x-f.vx*.07,f.y-f.vy*.07);ctx.stroke();}
+  function drawBomb(b){const q=clamp(b.t/b.duration,0,1);ctx.fillStyle='#20262b';ctx.beginPath();ctx.ellipse(b.x,b.y,5+q*2,9+q*3,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(255,255,255,.35)';ctx.beginPath();ctx.arc(b.tx,b.ty,14+Math.sin(q*12)*2,0,Math.PI*2);ctx.stroke();}
+  function drawExplosion(e){const q=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-q;ctx.fillStyle=e.kind==='flak'?'#ffb15f':'#ff8d4f';ctx.beginPath();ctx.arc(e.x,e.y,e.r*(.35+.65*q),0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(255,235,170,.8)';ctx.beginPath();ctx.arc(e.x,e.y,e.r*(.18+.28*q),0,Math.PI*2);ctx.fill();ctx.restore();}
+
+  function endMission(success, message) {
+    if (!game || game.ended) return;
+    game.ended=true; game.running=false; cancelAnimationFrame(animationFrame);
+    const accuracy=game.shots?Math.round(game.hits/game.shots*100):0;
+    const survival=Math.max(0,Math.round(game.player.hp));
+    if(success) game.score += survival*5;
+    els.debriefTitle.textContent=success?'Missione completata':'Missione conclusa';
+    els.debriefSubtitle.textContent=message;
+    els.debriefStats.innerHTML=`
+      <div class="stat"><span>Punteggio</span><strong>${game.score.toLocaleString('it-IT')}</strong></div>
+      <div class="stat"><span>Integrità</span><strong>${survival}%</strong></div>
+      <div class="stat"><span>Precisione</span><stron
