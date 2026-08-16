@@ -9,9 +9,9 @@ const HALF_W = 5;
 const HALF_L = 10;
 
 const DIFFICULTY = {
-  rookie: { power: 0.92, accuracy: 1.75 },
-  pro: { power: 1.03, accuracy: 1.0 },
-  elite: { power: 1.12, accuracy: 0.52 }
+  rookie: { power: 0.82, accuracy: 2.5 },
+  pro: { power: 0.94, accuracy: 1.5 },
+  elite: { power: 1.04, accuracy: 0.85 }
 };
 
 function prng(seed = 0x51f15e) {
@@ -75,12 +75,12 @@ test('headless match simulation keeps rally shots above the net and inside court
           const playerX = -3.5 + rnd() * 7;
           const aggressive = start.y > 1.5 ? 1 : 0;
           target = {
-            x: clamp(playerX * 0.35 + (rnd() - 0.5) * level.accuracy * 3, -4.1, 4.1),
+            x: clamp(playerX * 0.32 + (rnd() - 0.5) * level.accuracy * 3.4, -4.1, 4.1),
             y: R,
-            z: 6.2 + rnd() * 2
+            z: 6.6 + rnd() * 1.6
           };
-          speed = (10.1 + rnd() * 2.2 + aggressive * 1.9) * level.power;
-          lift = 2.7 + rnd() * 1.2 + aggressive * 0.7;
+          speed = (8.8 + rnd() * 1.5 + aggressive * 1.0) * level.power;
+          lift = 3.15 + rnd() * 1.0 + aggressive * 0.45;
         }
 
         const { velocity } = computeSafeRallyVelocity({ start, target, horizontalSpeed: speed, liftHint: lift });

@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MatchScore } from './scoring.js';
 import { computeSafeRallyVelocity } from './physics.js';
+import { createAthlete } from './athlete.js';
 import './style.css';
 
 const $ = (selector) => document.querySelector(selector);
@@ -40,9 +41,9 @@ const clock = new THREE.Clock();
 const COURT = { halfW: 5, halfL: 10, serviceLine: 6.95, netH: 0.88 };
 
 const DIFFICULTY = {
-  rookie: { speed: 4.55, reaction: 0.24, accuracy: 1.75, power: 0.92, label: 'ROOKIE' },
-  pro: { speed: 5.25, reaction: 0.14, accuracy: 1.0, power: 1.03, label: 'PRO' },
-  elite: { speed: 6.05, reaction: 0.08, accuracy: 0.52, power: 1.12, label: 'ELITE' }
+  rookie: { speed: 3.9, reaction: 0.34, accuracy: 2.5, power: 0.82, label: 'ROOKIE' },
+  pro: { speed: 4.6, reaction: 0.22, accuracy: 1.5, power: 0.94, label: 'PRO' },
+  elite: { speed: 5.4, reaction: 0.13, accuracy: 0.85, power: 1.04, label: 'ELITE' }
 };
 
 const QUALITY = {
@@ -59,11 +60,11 @@ function autoQuality() {
 }
 
 let settings = {
-  difficulty: localStorage.getItem('padelNovaDifficulty') || 'pro',
+  difficulty: localStorage.getItem('padelNovaDifficulty') || 'rookie',
   quality: localStorage.getItem('padelNovaQuality') || 'auto',
   sound: localStorage.getItem('padelNovaSound') !== 'off'
 };
-difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'pro';
+difficultySelect.value = DIFFICULTY[settings.difficulty] ? settings.difficulty : 'rookie';
 qualitySelect.value = ['auto', 'low', 'medium', 'high'].includes(settings.quality) ? settings.quality : 'auto';
 
 let renderer;
@@ -103,7 +104,7 @@ let gamepadCameraWasDown = false;
 let touchVector = { x: 0, z: 0 };
 let stats = { currentRally: 0, maxRally: 0, maxSpeed: 0 };
 
-const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: 5.85, group: null, racket: null, swing: 0 };
+const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: 6.8, group: null, racket: null, swing: 0 };
 const ai = { pos: new THREE.Vector3(0, 0, -7.8), vel: new THREE.Vector3(), speed: 5.25, group: null, racket: null, swing: 0 };
 const ball = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), mesh: null, radius: 0.105, spin: new THREE.Vector3(), trail: [] };
 
@@ -317,27 +318,7 @@ function addCourt() {
 }
 
 function makePlayer(color, isAI = false) {
-  const group = new THREE.Group();
-  const shirt = mat(color, 0.58, 0.03); const skin = mat(0xc58c68, 0.72); const dark = mat(0x101719, 0.48, 0.08);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.68, 7, 14), shirt); torso.position.y = 1.18; torso.castShadow = true; group.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 18, 12), skin); head.position.y = 1.86; head.castShadow = true; group.add(head);
-  for (const x of [-0.13, 0.13]) {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.55, 5, 9), dark); leg.position.set(x, 0.48, 0); leg.castShadow = true; group.add(leg);
-  }
-  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.48, 5, 9), skin); leftArm.position.set(-0.28, 1.2, 0); leftArm.rotation.z = 0.48; leftArm.castShadow = true; group.add(leftArm);
-  const rightArm = leftArm.clone(); rightArm.position.x = 0.3; rightArm.rotation.z = -0.55; group.add(rightArm);
-
-  const racket = new THREE.Group();
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.42, 10), dark); handle.rotation.z = Math.PI / 2; handle.position.x = 0.18; racket.add(handle);
-  const face = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.045, 28), mat(isAI ? 0xff654f : 0xc8ff34, 0.42, 0.1));
-  face.rotation.z = Math.PI / 2; face.position.x = 0.48; face.scale.y = 1.16; racket.add(face);
-  const holeMat = new THREE.MeshBasicMaterial({ color: 0x081013 });
-  for (let y = -0.13; y <= 0.13; y += 0.065) for (let z = -0.12; z <= 0.12; z += 0.06) {
-    if (y * y + z * z < 0.026) { const hole = new THREE.Mesh(new THREE.CircleGeometry(0.012, 7), holeMat); hole.rotation.y = Math.PI / 2; hole.position.set(0.505, y, z); racket.add(hole); }
-  }
-  racket.position.set(0.36, 1.1, 0.02); group.add(racket);
-  group.userData.racket = racket; group.userData.legs = group.children.slice(2, 4);
-  scene.add(group); return group;
+  return createAthlete({ THREE, scene, mat, color, isAI });
 }
 
 function makeBall() {
@@ -346,12 +327,13 @@ function makeBall() {
     ctx.beginPath(); ctx.arc(s * 0.2, s * 0.5, s * 0.46, -1.2, 1.2); ctx.stroke();
     ctx.beginPath(); ctx.arc(s * 0.8, s * 0.5, s * 0.46, 1.94, 4.34); ctx.stroke();
   });
-  ball.mesh = new THREE.Mesh(new THREE.SphereGeometry(ball.radius, 24, 18), new THREE.MeshStandardMaterial({ map: texture, roughness: 0.62, emissive: 0x243400, emissiveIntensity: 0.08 }));
+  ball.mesh = new THREE.Mesh(new THREE.SphereGeometry(ball.radius, 26, 20), new THREE.MeshStandardMaterial({ map: texture, roughness: 0.56, emissive: 0x314500, emissiveIntensity: 0.14 }));
   ball.mesh.castShadow = true; scene.add(ball.mesh);
-  const trailMat = new THREE.MeshBasicMaterial({ color: 0xdfff6a, transparent: true, opacity: 0.13, depthWrite: false });
-  for (let i = 0; i < 7; i += 1) {
-    const t = new THREE.Mesh(new THREE.SphereGeometry(ball.radius * (0.75 - i * 0.07), 10, 7), trailMat.clone());
-    t.material.opacity = Math.max(0.015, 0.13 - i * 0.017); scene.add(t); ball.trail.push(t);
+  const trailMat = new THREE.MeshBasicMaterial({ color: 0xeaff76, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending });
+  for (let i = 0; i < 12; i += 1) {
+    const scale = Math.max(0.24, 0.92 - i * 0.055);
+    const t = new THREE.Mesh(new THREE.SphereGeometry(ball.radius * scale, 12, 9), trailMat.clone());
+    t.material.opacity = Math.max(0.02, 0.3 - i * 0.022); scene.add(t); ball.trail.push(t);
   }
 }
 
@@ -497,7 +479,7 @@ function playerHit() {
   if (serveReady && getServer() === 'player') { beginServe('player'); return; }
   if (!rallyLive || serviceActive && serviceReceiver === 'player') return;
   const distance = horizontalBallDistance(player);
-  if (ball.pos.z > 0 && distance < 1.35 && ball.pos.y < 2.75) {
+  if (ball.pos.z > 0 && distance < 1.62 && ball.pos.y < 3.0) {
     const xIntent = getMoveX(); const zIntent = getMoveZ(); const smash = ball.pos.y > 1.55 ? 1 : 0; const lob = zIntent > 0.45 ? 1 : 0;
     const targetX = THREE.MathUtils.clamp(ball.pos.x + xIntent * 3.2, -4.25, 4.25); const targetZ = lob ? -8.2 : -7.4;
     launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 10.2 + power * 5.2 + smash * 2.7 - lob * 1.2, 2.4 + power * 1.8 + smash * 1.0 + lob * 2.5, 'player');
@@ -509,9 +491,9 @@ function playerHit() {
 function aiHit() {
   if (!rallyLive || pointLocked || serviceActive && serviceReceiver === 'ai') return;
   const level = DIFFICULTY[settings.difficulty];
-  const error = level.accuracy; const targetX = THREE.MathUtils.clamp(player.pos.x * 0.35 + (Math.random() - 0.5) * error * 3, -4.1, 4.1);
-  const aggressive = ball.pos.y > 1.5 ? 1 : 0; const targetZ = 6.2 + Math.random() * 2.0;
-  launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), (10.1 + Math.random() * 2.2 + aggressive * 1.9) * level.power, 2.7 + Math.random() * 1.2 + aggressive * 0.7, 'ai');
+  const error = level.accuracy; const targetX = THREE.MathUtils.clamp(player.pos.x * 0.32 + (Math.random() - 0.5) * error * 3.4, -4.1, 4.1);
+  const aggressive = ball.pos.y > 1.5 ? 1 : 0; const targetZ = 6.6 + Math.random() * 1.6;
+  launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), (8.8 + Math.random() * 1.5 + aggressive * 1.0) * level.power, 3.15 + Math.random() * 1.0 + aggressive * 0.45, 'ai');
   prepareAfterHit('ai'); ai.swing = 1; shake = reducedMotion ? 0 : 0.07; sound.tone('hit', 0.86);
 }
 
@@ -533,17 +515,39 @@ function clampActor(actor, side) {
 
 function animateActor(actor, dt, isAI) {
   actor.group.position.lerp(actor.pos, 1 - Math.exp(-12 * dt));
-  const gait = Math.sin(performance.now() * 0.012) * Math.min(1, actor.vel.length() / 3); actor.group.position.y = Math.abs(gait) * 0.025;
-  const legs = actor.group.userData.legs; if (legs) { legs[0].rotation.x = gait * 0.25; legs[1].rotation.x = -gait * 0.25; }
+  const speedFactor = Math.min(1, actor.vel.length() / 3.2);
+  const gait = Math.sin(performance.now() * 0.012) * speedFactor;
+  actor.group.position.y = Math.abs(gait) * 0.028;
+  const legs = actor.group.userData.legs;
+  if (legs) { legs[0].rotation.x = gait * 0.38; legs[1].rotation.x = -gait * 0.38; }
+  const anchors = actor.group.userData.legAnchors;
+  if (anchors) {
+    anchors[0].lower.rotation.x = Math.max(0, -gait) * 0.3;
+    anchors[1].lower.rotation.x = Math.max(0, gait) * 0.3;
+    anchors[0].shoe.rotation.x = Math.max(0, -gait) * 0.16;
+    anchors[1].shoe.rotation.x = Math.max(0, gait) * 0.16;
+  }
+  const arms = actor.group.userData.arms;
+  if (arms) arms[0].rotation.x = -gait * 0.22;
   if (actor.swing > 0) {
-    actor.swing = Math.max(0, actor.swing - dt * 4.8); const s = Math.sin((1 - actor.swing) * Math.PI); actor.racket.rotation.z = (isAI ? 1 : -1) * s * 1.18; actor.racket.rotation.y = s * 0.42;
-  } else { actor.racket.rotation.z = THREE.MathUtils.lerp(actor.racket.rotation.z, 0, 0.18); actor.racket.rotation.y = THREE.MathUtils.lerp(actor.racket.rotation.y, 0, 0.18); }
+    actor.swing = Math.max(0, actor.swing - dt * 4.8);
+    const s = Math.sin((1 - actor.swing) * Math.PI);
+    actor.racket.rotation.z = (isAI ? 1 : -1) * s * 1.18;
+    actor.racket.rotation.y = s * 0.42;
+    if (arms) arms[1].rotation.x = -1.08 * s;
+  } else {
+    actor.racket.rotation.z = THREE.MathUtils.lerp(actor.racket.rotation.z, 0, 0.18);
+    actor.racket.rotation.y = THREE.MathUtils.lerp(actor.racket.rotation.y, 0, 0.18);
+    if (arms) arms[1].rotation.x = THREE.MathUtils.lerp(arms[1].rotation.x, 0.16, 0.18);
+  }
 }
 
 function updatePlayer(dt) {
   let mx = getMoveX(), mz = getMoveZ(); const length = Math.hypot(mx, mz) || 1; if (length > 1) { mx /= length; mz /= length; }
-  const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight'); const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(player.speed * (sprint ? 1.34 : 1));
-  player.vel.lerp(desired, 1 - Math.exp(-10 * dt)); player.pos.addScaledVector(player.vel, dt); clampActor(player, 'player');
+  const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const mobileBoost = coarsePointer ? 1.12 : 1;
+  const desired = new THREE.Vector3(mx, 0, mz).multiplyScalar(player.speed * mobileBoost * (sprint ? 1.24 : 1));
+  player.vel.lerp(desired, 1 - Math.exp(-16 * dt)); player.pos.addScaledVector(player.vel, dt); clampActor(player, 'player');
   const facing = Math.atan2(ball.pos.x - player.pos.x, ball.pos.z - player.pos.z); player.group.rotation.y = THREE.MathUtils.lerp(player.group.rotation.y, facing, 0.15); animateActor(player, dt, false);
 }
 
@@ -560,7 +564,7 @@ function updateAI(dt) {
   const to = new THREE.Vector3(targetX - ai.pos.x, 0, targetZ - ai.pos.z); if (to.length() > 0.08) to.normalize().multiplyScalar(ai.speed);
   ai.vel.lerp(to, 1 - Math.exp(-8 * dt)); ai.pos.addScaledVector(ai.vel, dt); clampActor(ai, 'ai');
   ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.16); animateActor(ai, dt, true);
-  const aiReach = settings.difficulty === 'rookie' ? 1.75 : settings.difficulty === 'pro' ? 1.95 : 2.1;
+  const aiReach = settings.difficulty === 'rookie' ? 1.58 : settings.difficulty === 'pro' ? 1.78 : 1.98;
 const canReturn = !(serviceActive && serviceReceiver === 'ai');
 if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < aiReach && ball.pos.y < 3.05 && canReturn && aiReactionTimer <= 0) {
     aiReactionTimer = level.reaction; aiHit();
@@ -652,9 +656,13 @@ function updateBall(dt) {
 }
 
 function updateTrail(active) {
-  for (let i = ball.trail.length - 1; i > 0; i -= 1) ball.trail[i].position.lerp(ball.trail[i - 1].position, 0.72);
-  if (ball.trail[0]) ball.trail[0].position.lerp(ball.pos, 0.74);
-  for (const t of ball.trail) t.visible = active && !reducedMotion;
+  for (let i = ball.trail.length - 1; i > 0; i -= 1) ball.trail[i].position.lerp(ball.trail[i - 1].position, 0.52);
+  if (ball.trail[0]) ball.trail[0].position.lerp(ball.pos, 0.64);
+  for (let i = 0; i < ball.trail.length; i += 1) {
+    const t = ball.trail[i];
+    t.visible = active && !reducedMotion;
+    if (t.material) t.material.opacity = active ? Math.max(0.02, 0.3 - i * 0.022) : 0;
+  }
 }
 
 function pointTo(winner, reason) {
@@ -744,9 +752,14 @@ function setupEvents() {
 
   const stick = $('#touchStick'); const knob = stick.querySelector('i'); let pointerId = null;
   const updateStick = (event) => {
-    const r = stick.getBoundingClientRect(); const dx = event.clientX - (r.left + r.width / 2); const dy = event.clientY - (r.top + r.height / 2); const max = r.width * 0.32; const len = Math.hypot(dx, dy) || 1; const scale = Math.min(1, max / len); const px = dx * scale; const py = dy * scale;
-    knob.style.transform = `translate(${px}px,${py}px)`; touchVector.x = THREE.MathUtils.clamp(dx / max, -1, 1); touchVector.z = THREE.MathUtils.clamp(dy / max, -1, 1);
-  };
+  const r = stick.getBoundingClientRect();
+  const dx = event.clientX - (r.left + r.width / 2); const dy = event.clientY - (r.top + r.height / 2);
+  const max = r.width * 0.34; const len = Math.hypot(dx, dy) || 1; const clamped = Math.min(len, max);
+  const nx = dx / len; const ny = dy / len; const px = nx * clamped; const py = ny * clamped;
+  const normalized = clamped / max; const curve = normalized * normalized * (3 - 2 * normalized);
+  knob.style.transform = `translate(${px}px,${py}px)`;
+  touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1); touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
+};
   stick.addEventListener('pointerdown', (event) => { pointerId = event.pointerId; stick.setPointerCapture(pointerId); updateStick(event); });
   stick.addEventListener('pointermove', (event) => { if (event.pointerId === pointerId) updateStick(event); });
   const clearStick = (event) => { if (pointerId !== null && (!event || event.pointerId === pointerId)) { pointerId = null; touchVector.x = touchVector.z = 0; knob.style.transform = 'translate(0,0)'; } };
