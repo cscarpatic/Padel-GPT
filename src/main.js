@@ -540,11 +540,19 @@ function updatePlayer(dt) {
 function updateAI(dt) {
   const level = DIFFICULTY[settings.difficulty]; ai.speed = level.speed; aiReactionTimer -= dt;
   let targetX = THREE.MathUtils.clamp(ball.pos.x * 0.82, -3.8, 3.8); let targetZ = -6.6;
-  if (rallyLive && ball.pos.z < 0) { targetZ = THREE.MathUtils.clamp(ball.pos.z - 0.9, -8.6, -1.8); targetX = THREE.MathUtils.clamp(ball.pos.x + ball.vel.x * 0.12, -4, 4); }
+  if (rallyLive && ball.pos.z < 0) {
+  const lookAhead = ball.vel.z < 0 ? 0.18 : 0.08;
+  const predictedX = ball.pos.x + ball.vel.x * lookAhead;
+  const predictedZ = ball.pos.z + ball.vel.z * lookAhead;
+  targetZ = THREE.MathUtils.clamp(predictedZ - 0.55, -8.7, -1.5);
+  targetX = THREE.MathUtils.clamp(predictedX, -4.15, 4.15);
+}
   const to = new THREE.Vector3(targetX - ai.pos.x, 0, targetZ - ai.pos.z); if (to.length() > 0.08) to.normalize().multiplyScalar(ai.speed);
-  ai.vel.lerp(to, 1 - Math.exp(-6 * dt)); ai.pos.addScaledVector(ai.vel, dt); clampActor(ai, 'ai');
-  ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.12); animateActor(ai, dt, true);
-  if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < 1.28 && ball.pos.y < 2.55 && !(serviceActive && serviceReceiver === 'ai') && aiReactionTimer <= 0) {
+  ai.vel.lerp(to, 1 - Math.exp(-8 * dt)); ai.pos.addScaledVector(ai.vel, dt); clampActor(ai, 'ai');
+  ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.16); animateActor(ai, dt, true);
+  const aiReach = settings.difficulty === 'rookie' ? 1.75 : settings.difficulty === 'pro' ? 1.95 : 2.1;
+const canReturn = !(serviceActive && serviceReceiver === 'ai');
+if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < aiReach && ball.pos.y < 3.05 && canReturn && aiReactionTimer <= 0) {
     aiReactionTimer = level.reaction; aiHit();
   }
 }
