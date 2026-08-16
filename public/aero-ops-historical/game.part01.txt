@@ -1,0 +1,76 @@
+(() => {
+  'use strict';
+
+  const missions = [
+    {
+      id: 'pearl',
+      name: 'Pearl Harbor',
+      date: '7 dicembre 1941',
+      theater: 'Oʻahu, Hawaii',
+      side: 'aviazione imbarcata giapponese',
+      duration: 78,
+      intro: 'Sortita d’attacco storicamente ispirata alla prima ondata su Oʻahu: avvicinamento sul mare, caccia difensivi e forte fuoco contraereo sopra l’area portuale.',
+      historical: 'L’attacco reale colpì sia le navi a Pearl Harbor sia installazioni aeronautiche, tra cui Wheeler e Hickam Field.',
+      palette: { sky: '#315b73', ground: '#20483d', water: '#1b4c6d' },
+      targets: [
+        { name: 'Battleship Row', kind: 'ship', hp: 10, points: 1200, defense: 1.0, note: 'Navi da battaglia all’ormeggio' },
+        { name: 'Wheeler Field', kind: 'airfield', hp: 8, points: 900, defense: .8, note: 'Area aeronautica e hangar' },
+        { name: 'Hickam Field', kind: 'airfield', hp: 8, points: 850, defense: .75, note: 'Pista e infrastrutture' }
+      ]
+    },
+    {
+      id: 'midway',
+      name: 'Battaglia delle Midway',
+      date: '4 giugno 1942',
+      theater: 'Pacifico centrale',
+      side: 'aviazione imbarcata statunitense',
+      duration: 80,
+      intro: 'Attacco aeronavale ispirato alle sortite contro la forza portaerei giapponese: attraversa la CAP, individua le navi e porta le bombe sul bersaglio.',
+      historical: 'Le azioni aeree della battaglia furono decisive e coinvolsero bombardieri in picchiata, aerosiluranti e caccia di scorta.',
+      palette: { sky: '#4381a8', ground: '#456449', water: '#245d84' },
+      targets: [
+        { name: 'Portaerei nemica', kind: 'carrier', hp: 12, points: 1400, defense: 1.05, note: 'Bersaglio principale della formazione navale' },
+        { name: 'Incrociatori di scorta', kind: 'ship', hp: 9, points: 850, defense: .85, note: 'Unità di protezione dello schermo' },
+        { name: 'Caccia CAP', kind: 'air', hp: 7, points: 700, defense: .55, note: 'Pattuglia aerea di combattimento' }
+      ]
+    },
+    {
+      id: 'normandy',
+      name: 'Normandia: supporto tattico',
+      date: 'giugno 1944',
+      theater: 'Francia settentrionale',
+      side: 'cacciabombardieri alleati',
+      duration: 76,
+      intro: 'Missione di interdizione ispirata alle operazioni aeree dopo lo sbarco: neutralizza prima ciò che ritieni più pericoloso, quindi attacca i bersagli al suolo.',
+      historical: 'Dopo il D-Day, l’aviazione alleata svolse missioni di interdizione, attacco al suolo e copertura contro movimenti e infrastrutture tedesche.',
+      palette: { sky: '#6c8797', ground: '#5d7549', water: '#3e7184' },
+      targets: [
+        { name: 'Batteria contraerea', kind: 'flak', hp: 7, points: 950, defense: 1.15, note: 'Riduce il fuoco AA se distrutta' },
+        { name: 'Colonna corazzata', kind: 'armor', hp: 9, points: 1100, defense: .9, note: 'Mezzi in movimento verso il fronte' },
+        { name: 'Ponte ferroviario', kind: 'bridge', hp: 11, points: 1250, defense: .7, note: 'Nodo logistico e ferroviario' }
+      ]
+    }
+  ];
+
+  const els = {
+    screens: [...document.querySelectorAll('.screen')],
+    missionGrid: document.getElementById('missionGrid'),
+    planTitle: document.getElementById('planTitle'),
+    priorityList: document.getElementById('priorityList'),
+    altitude: document.getElementById('altitudeSelect'),
+    loadout: document.getElementById('loadoutSelect'),
+    briefing: document.getElementById('briefingText'),
+    canvas: document.getElementById('gameCanvas'),
+    hp: document.getElementById('hudHp'),
+    ammo: document.getElementById('hudAmmo'),
+    bombs: document.getElementById('hudBombs'),
+    score: document.getElementById('hudScore'),
+    time: document.getElementById('hudTime'),
+    target: document.getElementById('hudTarget'),
+    objectiveStrip: document.getElementById('objectiveStrip'),
+    pause: document.getElementById('pauseOverlay'),
+    countdown: document.getElementById('countdownOverlay'),
+    countdownText: document.getElementById('countdownText'),
+    debriefTitle: document.getElementById('debriefTitle'),
+    debriefSubtitle: document.getElementById('debriefSubtitle'),
+    debriefStats: document.getElementById('debriefSta
