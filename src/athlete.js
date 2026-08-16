@@ -170,6 +170,7 @@ export function createAthlete({ THREE, scene, mat, color, isAI = false }) {
 
   const arms = [];
   const forearms = [];
+  const handPivots = [];
   const armBaseZ = [];
   for (const [index, side] of [-1, 1].entries()) {
     const shoulder = new THREE.Group();
@@ -202,13 +203,17 @@ export function createAthlete({ THREE, scene, mat, color, isAI = false }) {
     wristBand.position.y = -0.29;
     forearmPivot.add(wristBand);
 
+    const handPivot = new THREE.Group();
+    handPivot.position.y = -0.35;
+    forearmPivot.add(handPivot);
+
     const hand = shadow(new THREE.Mesh(new THREE.SphereGeometry(0.065, 14, 10), skin));
-    hand.position.y = -0.35;
     hand.scale.set(0.82, 1.05, 0.74);
-    forearmPivot.add(hand);
+    handPivot.add(hand);
 
     arms.push(shoulder);
     forearms.push(forearmPivot);
+    handPivots.push(handPivot);
   }
 
   const racket = new THREE.Group();
@@ -263,8 +268,9 @@ export function createAthlete({ THREE, scene, mat, color, isAI = false }) {
   racketLogo.position.set(0.55, 0, 0.002);
   racket.add(racketLogo);
 
-  racket.position.set(0.36, 1.08, 0.02);
-  bodyRoot.add(racket);
+  racket.position.set(0.015, -0.015, 0.01);
+  racket.rotation.set(0.08, -0.2, -0.32);
+  handPivots[1].add(racket);
 
   group.userData.racket = racket;
   group.userData.bodyRoot = bodyRoot;
@@ -273,6 +279,7 @@ export function createAthlete({ THREE, scene, mat, color, isAI = false }) {
   group.userData.legAnchors = legAnchors;
   group.userData.arms = arms;
   group.userData.forearms = forearms;
+  group.userData.handPivots = handPivots;
   group.userData.armBaseZ = armBaseZ;
   scene.add(group);
   return group;
