@@ -4,6 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MatchScore } from './scoring.js';
+import { computeSafeRallyVelocity } from './physics.js';
 import './style.css';
 
 const $ = (selector) => document.querySelector(selector);
@@ -469,8 +470,17 @@ function launchBallistic(target, flightTime, hitter, spinY = 7) {
 }
 
 function launchTowards(target, horizontalSpeed, lift, hitter) {
-  const d = target.clone().sub(ball.pos); d.y = 0; d.normalize(); ball.vel.set(d.x * horizontalSpeed, lift, d.z * horizontalSpeed);
-  ball.spin.set((Math.random() - 0.5) * 4, 8 * (hitter === 'player' ? 1 : -1), -ball.vel.x * 0.62); recordShotSpeed();
+  const { velocity } = computeSafeRallyVelocity({
+    start: ball.pos,
+    target,
+    horizontalSpeed,
+    liftHint: lift,
+    netHeight: COURT.netH,
+    ballRadius: ball.radius
+  });
+  ball.vel.set(velocity.x, velocity.y, velocity.z);
+  ball.spin.set((Math.random() - 0.5) * 3.2, 3.5 * (hitter === 'player' ? 1 : -1), -ball.vel.x * 0.42);
+  recordShotSpeed();
 }
 
 function recordShotSpeed() {
