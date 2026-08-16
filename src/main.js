@@ -8,6 +8,7 @@ import { computeSafeRallyVelocity } from './physics.js';
 import { createAthlete } from './athlete.js';
 import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';
 import { flatCpuServePoint } from './service.js';
+import { chooseAiRallyShot } from './ai-shot.js';
 import { addSeasideArena, createGameplayGuides, updateGameplayGuides, computeGameplayCamera } from './presentation.js';
 import './style.css';
 
@@ -625,20 +626,27 @@ function playerHit() {
 function aiHit() {
   if (!rallyLive || pointLocked || serviceActive || cpuServeFlight) return;
   const level = DIFFICULTY[settings.difficulty];
-  const aggressive = ball.pos.y > 1.5 ? 1 : 0;
-  const targetX = THREE.MathUtils.clamp(
-    player.pos.x * 0.18 + (Math.random() - 0.5) * level.accuracy * 1.6,
-    -3.25,
-    3.25
-  );
-  const targetZ = 6.3 + Math.random() * 1.2;
-  const speed = (7.6 + Math.random() * 1.0 + aggressive * 0.55) * level.power;
-  const lift = 3.7 + Math.random() * 1.0 + aggressive * 0.3;
+  const shot = chooseAiRallyShot({
+    difficulty: settings.difficulty,
+    playerX: player.pos.x,
+    playerZ: player.pos.z,
+    ballY: ball.pos.y,
+    accuracy: level.accuracy,
+    rollLob: Math.random(),
+    rollX: Math.random(),
+    rollDepth: Math.random(),
+    rollSpeed: Math.random()
+  });
   ai.swingSide = Math.sign(ball.pos.x - ai.pos.x) || 1;
   ai.swingHeight = ball.pos.y;
-  showImpactFX(0xff8a78);
-  launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), speed, lift, 'ai');
-  prepareAfterHit('ai'); ai.swing = 1; shake = reducedMotion ? 0 : 0.055; sound.tone('hit', 0.78);
+  showImpactFX(shot.type === 'lob' ? 0xffc57a : 0xff8a78);
+  launchTowards(
+    new THREE.Vector3(shot.targetX, ball.radius, shot.targetZ),
+    shot.horizontalSpeed,
+    shot.liftHint,
+    'ai'
+  );
+  prepareAfterHit('ai'); ai.swing = 1; shake = reducedMotion ? 0 : 0.055; sound.tone('hit', shot.type === 'lob' ? 0.7 : 0.84);
 }
 
 function getMoveX() {
