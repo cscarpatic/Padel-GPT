@@ -182,7 +182,7 @@ function applyQuality() {
     keyLight.shadow.mapSize.set(q.shadowSize, q.shadowSize);
     keyLight.shadow.needsUpdate = true;
   }
-  if (bloomPass) bloomPass.enabled = q.bloom && !reducedMotion;
+  if (bloomPass) bloomPass.enabled = q.bloom && !reducedMotion && !coarsePointer;
   resizeRenderer();
 }
 
@@ -204,7 +204,7 @@ function makeCanvasTexture(draw, size = 512) {
 function addCourt() {
   const skyMaterial = new THREE.ShaderMaterial({
     side: THREE.BackSide,
-    uniforms: { top: { value: new THREE.Color(0x82d5ff) }, bottom: { value: new THREE.Color(0xeaf8ff) } },
+    uniforms: { top: { value: new THREE.Color(0x62bce8) }, bottom: { value: new THREE.Color(0xbaddec) } },
     vertexShader: 'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
     fragmentShader: 'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){float h=normalize(v).y*.5+.5;gl_FragColor=vec4(mix(bottom,top,pow(h,1.45)),1.);}'
   });
@@ -223,9 +223,9 @@ function addCourt() {
   }, 1024);
   turf.wrapS = turf.wrapT = THREE.RepeatWrapping; turf.repeat.set(2, 4);
 
-  const arenaGround = new THREE.Mesh(new THREE.CircleGeometry(58, 64), mat(0xd7ecf8, 1));
+  const arenaGround = new THREE.Mesh(new THREE.CircleGeometry(58, 64), mat(0x78b8cf, 0.94));
   arenaGround.rotation.x = -Math.PI / 2; arenaGround.position.y = -0.38; arenaGround.receiveShadow = true; scene.add(arenaGround);
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.28, 22.7), mat(0xf4f9fc, 0.72, 0.03));
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.28, 22.7), mat(0xc8dce6, 0.76, 0.02));
   slab.position.y = -0.2; slab.receiveShadow = true; scene.add(slab);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 20), new THREE.MeshStandardMaterial({ map: turf, roughness: 0.72 }));
   floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
@@ -311,12 +311,12 @@ function addCourt() {
   }
   scene.add(spectators);
 
-  scene.add(new THREE.HemisphereLight(0xdaf5ff, 0xd5e6ef, 1.78));
-  keyLight = new THREE.DirectionalLight(0xffffff, 2.85); keyLight.position.set(-8, 16, 7); keyLight.castShadow = true;
+  scene.add(new THREE.HemisphereLight(0xc8edff, 0x78909d, 0.72));
+  keyLight = new THREE.DirectionalLight(0xffffff, 1.08); keyLight.position.set(-8, 16, 7); keyLight.castShadow = true;
   keyLight.shadow.camera.left = -14; keyLight.shadow.camera.right = 14; keyLight.shadow.camera.top = 18; keyLight.shadow.camera.bottom = -18;
   scene.add(keyLight);
   [[-8, 8, -13], [8, 8, -13], [-8, 8, 13], [8, 8, 13]].forEach(([x, y, z], index) => {
-    const spot = new THREE.SpotLight(index < 2 ? 0xbfeaff : 0xffffff, 78, 38, Math.PI / 5, 0.45, 1.1);
+    const spot = new THREE.SpotLight(index < 2 ? 0xbfeaff : 0xffffff, 11, 34, Math.PI / 5, 0.45, 1.1);
     spot.position.set(x, y, z); spot.target.position.set(0, 0, 0); spot.castShadow = index === 0; scene.add(spot, spot.target);
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(2, 0.15, 0.5), new THREE.MeshBasicMaterial({ color: 0xf8fdff, toneMapped: false }));
     lamp.position.set(x, y, z); lamp.lookAt(0, 0, 0); scene.add(lamp);
@@ -351,10 +351,10 @@ function initRenderer() {
     console.error(error); boot.classList.add('hidden'); unsupported.classList.remove('hidden'); return false;
   }
   renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.94;
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = coarsePointer ? 0.68 : 0.82;
   camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 180); camera.position.set(5.5, 8.2, 16.5);
   composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.14, 0.28, 0.94); composer.addPass(bloomPass); composer.addPass(new OutputPass());
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.05, 0.12, 0.98); composer.addPass(bloomPass); composer.addPass(new OutputPass());
   applyQuality(); return true;
 }
 
