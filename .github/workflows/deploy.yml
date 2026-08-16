@@ -1,4 +1,4 @@
-# GitHub Pages deployment workflow — AI return redeploy
+# GitHub Pages deployment workflow — simulated rally physics
 name: Deploy PADEL NOVA to GitHub Pages
 
 on:
