@@ -7,6 +7,7 @@ import { MatchScore } from './scoring.js';
 import { computeSafeRallyVelocity } from './physics.js';
 import { createAthlete } from './athlete.js';
 import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';
+import { flatCpuServePoint } from './service.js';
 import { addSeasideArena, createGameplayGuides, updateGameplayGuides, computeGameplayCamera } from './presentation.js';
 import './style.css';
 
@@ -84,6 +85,7 @@ let pointLocked = false;
 let rallyLive = false;
 let serveReady = false;
 let serveAnimation = null;
+let cpuServeFlight = null;
 let serviceActive = false;
 let serviceReceiver = 'ai';
 let serviceTargetSign = -1;
@@ -367,7 +369,7 @@ function setUIPlaying(active) {
 }
 
 function showMenu() {
-  appMode = 'menu'; clearTimeout(pointTimer); pointLocked = false; rallyLive = false; serveReady = false; serveAnimation = null;
+  appMode = 'menu'; clearTimeout(pointTimer); pointLocked = false; rallyLive = false; serveReady = false; serveAnimation = null; cpuServeFlight = null;
   menu.classList.remove('hidden'); pauseMenu.classList.add('hidden'); matchEnd.classList.add('hidden'); tutorial.classList.add('hidden'); setUIPlaying(false);
   statusEl.textContent = 'SERVIZIO'; keys.clear(); touchVector.x = touchVector.z = 0;
 }
@@ -412,7 +414,7 @@ function serviceSideSign() {
 
 function resetBall(server, preserveFault = false) {
   if (score.finished) return;
-  rallyLive = false; serveReady = true; serveAnimation = null; serviceActive = false; netTouchedOnServe = false; serviceFenceFaultPending = false;
+  rallyLive = false; serveReady = true; serveAnimation = null; cpuServeFlight = null; serviceActive = false; netTouchedOnServe = false; serviceFenceFaultPending = false;
   if (!preserveFault) serveFaultCount = 0;
   groundBounces.player = groundBounces.ai = 0; legalBounce.player = legalBounce.ai = false; ball.vel.set(0, 0, 0); ball.spin.set(0, 0, 0);
   stats.currentRally = 0; updateRallyUI();
@@ -443,16 +445,83 @@ function updateServeAnimation(dt) {
     const k = s.t / 0.24; ball.pos.y = THREE.MathUtils.lerp(1.02, ball.radius, k * k);
   } else if (s.t < 0.46) {
     if (!s.bounced) { s.bounced = true; sound.tone('bounce', 0.5); }
-    const k = (s.t - 0.24) / 0.22; ball.pos.y = THREE.MathUtils.lerp(ball.radius, 0.72, Math.sin(k * Math.PI / 2));
+    const k = (s.t - 0.24) / 0.22; const strikeHeight = s.server === 'ai' ? 0.84 : 0.72; ball.pos.y = THREE.MathUtils.lerp(ball.radius, strikeHeight, Math.sin(k * Math.PI / 2));
   } else if (!s.struck) {
     s.struck = true;
-    const targetX = serviceTargetSign * (s.server === 'ai' ? 1.45 : 1.85);
-    const targetZ = s.server === 'player' ? -4.4 : 6.2;
+    const targetX = serviceTargetSign * (s.server === 'ai' ? 1.35 : 1.85);
+    const targetZ = s.server === 'player' ? -4.4 : 6.25;
     const target = new THREE.Vector3(targetX, ball.radius, targetZ);
-    launchService(target, s.server); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
+    if (s.server === 'ai') startCpuFlatServe(target); else launchService(target, s.server);
+    serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
     if (s.server === 'player') player.swing = 1; else ai.swing = 1; shake = reducedMotion ? 0 : 0.08; sound.tone('hit', 0.9); statusEl.textContent = 'SERVIZIO IN GIOCO';
   }
   ball.mesh.position.copy(ball.pos);
+}
+
+function startCpuFlatServe(target) {
+  const duration = 0.54;
+  cpuServeFlight = {
+    elapsed: 0,
+    duration,
+    start: ball.pos.clone(),
+    target: target.clone()
+  };
+  const dx = target.x - ball.pos.x;
+  const dz = target.z - ball.pos.z;
+  ball.vel.set(dx / duration, 0, dz / duration);
+  ball.spin.set(0, 0, -ball.vel.x * 0.035);
+  recordShotSpeed();
+}
+
+function updateCpuFlatServe(dt) {
+  if (!cpuServeFlight) return;
+  const flight = cpuServeFlight;
+  const previousX = ball.pos.x;
+  const previousY = ball.pos.y;
+  const previousZ = ball.pos.z;
+  flight.elapsed += dt;
+  const progress = Math.min(1, flight.elapsed / flight.duration);
+  const point = flatCpuServePoint({
+    start: flight.start,
+    target: flight.target,
+    progress,
+    netHeight: COURT.netH,
+    ballRadius: ball.radius,
+    clearance: 0.014
+  });
+
+  ball.pos.set(point.x, point.y, point.z);
+  const invDt = 1 / Math.max(dt, 0.001);
+  ball.vel.set(
+    (ball.pos.x - previousX) * invDt,
+    (ball.pos.y - previousY) * invDt,
+    (ball.pos.z - previousZ) * invDt
+  );
+  ball.mesh.position.copy(ball.pos);
+  ball.mesh.rotation.z += ball.spin.z * dt;
+  updateTrail(true);
+
+  if (progress < 1) return;
+
+  cpuServeFlight = null;
+  serviceActive = false;
+  netTouchedOnServe = false;
+  serviceFenceFaultPending = true;
+  groundBounces[serviceReceiver] = 1;
+  legalBounce[serviceReceiver] = true;
+  statusEl.textContent = 'RALLY';
+  sound.tone('bounce', 0.52);
+
+  const dx = flight.target.x - flight.start.x;
+  const dz = flight.target.z - flight.start.z;
+  const horizontalLength = Math.max(0.001, Math.hypot(dx, dz));
+  const postBounceSpeed = 9.6;
+  ball.vel.set(
+    dx / horizontalLength * postBounceSpeed,
+    2.35,
+    dz / horizontalLength * postBounceSpeed
+  );
+  ball.spin.set(0, 0, -ball.vel.x * 0.08);
 }
 
 function launchService(target, hitter) {
@@ -554,7 +623,7 @@ function playerHit() {
 }
 
 function aiHit() {
-  if (!rallyLive || pointLocked || serviceActive && serviceReceiver === 'ai') return;
+  if (!rallyLive || pointLocked || serviceActive || cpuServeFlight) return;
   const level = DIFFICULTY[settings.difficulty];
   const aggressive = ball.pos.y > 1.5 ? 1 : 0;
   const targetX = THREE.MathUtils.clamp(
@@ -769,7 +838,7 @@ function updateAI(dt) {
   clampActor(ai, 'ai');
   ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.14);
   animateActor(ai, dt, true);
-  const canReturn = !(serviceActive && serviceReceiver === 'ai');
+  const canReturn = !serviceActive && !cpuServeFlight;
   if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < level.aiReach && ball.pos.y < 2.95 && canReturn && aiReactionTimer <= 0) {
     aiReactionTimer = level.reaction;
     aiHit();
@@ -803,6 +872,7 @@ function serviceFault(reason = 'FALLO DI SERVIZIO') {
 
 function updateBall(dt) {
   if (serveAnimation) { updateServeAnimation(dt); return; }
+  if (cpuServeFlight) { updateCpuFlatServe(dt); return; }
   if (serveReady) {
     const server = getServer(); const carrier = server === 'player' ? player : ai; const zOffset = server === 'player' ? -0.05 : 0.05; const xOffset = server === 'player' ? -0.4 : 0.4;
     ball.pos.set(carrier.pos.x + xOffset, 1.02 + Math.sin(performance.now() * 0.004) * 0.035, carrier.pos.z + zOffset); ball.mesh.position.copy(ball.pos); updateTrail(false); return;
@@ -871,7 +941,7 @@ function updateTrail(active) {
 }
 
 function pointTo(winner, reason) {
-  if (pointLocked) return; pointLocked = true; rallyLive = false; serviceActive = false; statusEl.textContent = reason;
+  if (pointLocked) return; pointLocked = true; rallyLive = false; serviceActive = false; cpuServeFlight = null; statusEl.textContent = reason;
   const result = score.point(winner); updateScoreUI();
   if (result.type === 'set') showMessage(winner === 'player' ? 'SET · VITTORIA' : 'SET · CPU');
   else if (result.type === 'game') showMessage(winner === 'player' ? 'GAME · TU' : 'GAME · CPU');
