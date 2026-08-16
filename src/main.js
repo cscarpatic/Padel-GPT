@@ -9,6 +9,7 @@ import { createAthlete } from './athlete.js';
 import { DIFFICULTY, PLAYER_TUNING, joystickCurve } from './gameplay.js';
 import { flatCpuServePoint } from './service.js';
 import { chooseAiRallyShot } from './ai-shot.js';
+import { AI_SERVE_RECEIVE, computeAiServeReceiveTarget, isAiServeReceivePhase } from './serve-receive.js';
 import { addSeasideArena, createGameplayGuides, updateGameplayGuides, computeGameplayCamera } from './presentation.js';
 import './style.css';
 
@@ -828,27 +829,42 @@ function updatePlayer(dt) {
 
 function updateAI(dt) {
   const level = DIFFICULTY[settings.difficulty];
-  ai.speed = level.speed;
+  const receivingPlayerServe = isAiServeReceivePhase({
+    serviceActive,
+    serviceFenceFaultPending,
+    serviceReceiver,
+    lastHitter
+  });
+  ai.speed = receivingPlayerServe ? Math.max(level.speed, AI_SERVE_RECEIVE.minSpeed) : level.speed;
   aiReactionTimer -= dt;
   let targetX = THREE.MathUtils.clamp(ball.pos.x * 0.72, -3.5, 3.5);
   let targetZ = -6.8;
-  if (rallyLive && ball.pos.z < 0) {
+
+  if (receivingPlayerServe && rallyLive) {
+    const receiveTarget = computeAiServeReceiveTarget({ ballPos: ball.pos, ballVel: ball.vel });
+    targetX = receiveTarget.x;
+    targetZ = receiveTarget.z;
+  } else if (rallyLive && ball.pos.z < 0) {
     const lookAhead = ball.vel.z < 0 ? 0.14 : 0.06;
     const predictedX = ball.pos.x + ball.vel.x * lookAhead;
     const predictedZ = ball.pos.z + ball.vel.z * lookAhead;
     targetZ = THREE.MathUtils.clamp(predictedZ - 0.48, -8.6, -1.7);
     targetX = THREE.MathUtils.clamp(predictedX, -3.95, 3.95);
   }
+
   const to = new THREE.Vector3(targetX - ai.pos.x, 0, targetZ - ai.pos.z);
   if (to.length() > 0.08) to.normalize().multiplyScalar(ai.speed);
-  ai.vel.lerp(to, 1 - Math.exp(-7 * dt));
+  ai.vel.lerp(to, 1 - Math.exp(-(receivingPlayerServe ? 10.5 : 7) * dt));
   ai.pos.addScaledVector(ai.vel, dt);
   clampActor(ai, 'ai');
-  ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), 0.14);
+  ai.group.rotation.y = THREE.MathUtils.lerp(ai.group.rotation.y, Math.atan2(ball.pos.x - ai.pos.x, ball.pos.z - ai.pos.z), receivingPlayerServe ? 0.22 : 0.14);
   animateActor(ai, dt, true);
+
   const canReturn = !serviceActive && !cpuServeFlight;
-  if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < level.aiReach && ball.pos.y < 2.95 && canReturn && aiReactionTimer <= 0) {
-    aiReactionTimer = level.reaction;
+  const returnReach = receivingPlayerServe ? Math.max(level.aiReach, AI_SERVE_RECEIVE.reach) : level.aiReach;
+  const reactionReady = receivingPlayerServe || aiReactionTimer <= 0;
+  if (rallyLive && ball.pos.z < 0 && horizontalBallDistance(ai) < returnReach && ball.pos.y < 2.95 && canReturn && reactionReady) {
+    aiReactionTimer = receivingPlayerServe ? AI_SERVE_RECEIVE.followUpDelay : level.reaction;
     aiHit();
   }
 }
