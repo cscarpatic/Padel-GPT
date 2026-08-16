@@ -109,6 +109,8 @@ let touchVector = { x: 0, z: 0 };
 let stats = { currentRally: 0, maxRally: 0, maxSpeed: 0 };
 let gameplayGuides = null;
 let hitBuffer = 0;
+let pendingTouchShot = null;
+let touchShotGesture = { active: false, pointerId: null, startX: 0, startY: 0, startedAt: 0, aim: 0, lob: 0, charge: 0.5 };
 
 const player = { pos: new THREE.Vector3(0, 0, 7.8), vel: new THREE.Vector3(), speed: PLAYER_TUNING.speed, group: null, racket: null, swing: 0 };
 const ai = { pos: new THREE.Vector3(0, 0, -7.8), vel: new THREE.Vector3(), speed: 5.25, group: null, racket: null, swing: 0 };
@@ -442,11 +444,29 @@ function updateServeAnimation(dt) {
     if (!s.bounced) { s.bounced = true; sound.tone('bounce', 0.5); }
     const k = (s.t - 0.24) / 0.22; ball.pos.y = THREE.MathUtils.lerp(ball.radius, 0.72, Math.sin(k * Math.PI / 2));
   } else if (!s.struck) {
-    s.struck = true; const target = new THREE.Vector3(serviceTargetSign * 2.2, ball.radius, s.server === 'player' ? -4.65 : 4.65);
-    launchBallistic(target, 0.78, s.server, 4.5); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
+    s.struck = true;
+    const targetX = serviceTargetSign * (s.server === 'ai' ? 1.55 : 1.85);
+    const targetZ = s.server === 'player' ? -4.4 : 4.4;
+    const target = new THREE.Vector3(targetX, ball.radius, targetZ);
+    launchService(target, s.server); serveAnimation = null; rallyLive = true; lastHitter = s.server; stats.currentRally = 1; updateRallyUI();
     if (s.server === 'player') player.swing = 1; else ai.swing = 1; shake = reducedMotion ? 0 : 0.08; sound.tone('hit', 0.9); statusEl.textContent = 'SERVIZIO IN GIOCO';
   }
   ball.mesh.position.copy(ball.pos);
+}
+
+function launchService(target, hitter) {
+  const { velocity } = computeSafeRallyVelocity({
+    start: ball.pos,
+    target,
+    horizontalSpeed: hitter === 'ai' ? 13.2 : 13.8,
+    liftHint: 4.1,
+    netHeight: COURT.netH,
+    ballRadius: ball.radius,
+    clearanceMargin: 0.1
+  });
+  ball.vel.set(velocity.x, velocity.y, velocity.z);
+  ball.spin.set(0, 0, -ball.vel.x * 0.16);
+  recordShotSpeed();
 }
 
 function launchBallistic(target, flightTime, hitter, spinY = 7) {
@@ -482,14 +502,19 @@ function prepareAfterHit(hitter) {
 
 function playerHit() {
   if (appMode !== 'playing' || pointLocked) return false;
-  if (serveReady && getServer() === 'player') { beginServe('player'); return true; }
+  if (serveReady && getServer() === 'player') { pendingTouchShot = null; beginServe('player'); return true; }
   if (!rallyLive || serviceActive && serviceReceiver === 'player') return false;
   const distance = horizontalBallDistance(player);
   if (ball.pos.z > 0 && distance < PLAYER_TUNING.hitReach && ball.pos.y < PLAYER_TUNING.maxHitHeight) {
-    const xIntent = getMoveX(); const zIntent = getMoveZ(); const smash = ball.pos.y > 1.55 ? 1 : 0; const lob = zIntent > 0.45 ? 1 : 0;
-    const targetX = THREE.MathUtils.clamp(ball.pos.x + xIntent * 3.2, -4.25, 4.25); const targetZ = lob ? -8.2 : -7.4;
-    launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 10.2 + power * 5.2 + smash * 2.7 - lob * 1.2, 2.4 + power * 1.8 + smash * 1.0 + lob * 2.5, 'player');
-    prepareAfterHit('player'); player.swing = 1; shake = reducedMotion ? 0 : 0.14; sound.tone('hit', 1.12); statusEl.textContent = smash ? 'SMASH' : lob ? 'LOB' : 'RALLY';
+    const touchShot = coarsePointer ? pendingTouchShot : null;
+    const xIntent = touchShot ? touchShot.aim : getMoveX();
+    const zIntent = getMoveZ();
+    const shotPower = touchShot ? touchShot.power : power;
+    const smash = ball.pos.y > 1.55 ? 1 : 0;
+    const lob = touchShot ? touchShot.lob > 0.45 : zIntent > 0.45 ? 1 : 0;
+    const targetX = THREE.MathUtils.clamp(ball.pos.x + xIntent * 3.45, -4.25, 4.25); const targetZ = lob ? -8.35 : -7.4;
+    launchTowards(new THREE.Vector3(targetX, ball.radius, targetZ), 9.8 + shotPower * 5.8 + smash * 2.5 - lob * 1.0, 2.55 + shotPower * 1.65 + smash * 0.9 + lob * 2.65, 'player');
+    prepareAfterHit('player'); pendingTouchShot = null; player.swing = 1; shake = reducedMotion ? 0 : 0.14; sound.tone('hit', 1.12); statusEl.textContent = smash ? 'SMASH' : lob ? 'LOB' : 'RALLY';
     navigator.vibrate?.(18);
     return true;
   }
@@ -800,7 +825,18 @@ function animate() {
   if (Math.abs(camera.aspect - expectedAspect) > 0.015 || canvas.clientWidth !== viewport.width || canvas.clientHeight !== viewport.height) resizeRenderer();
   pollGamepad();
   if (appMode === 'playing') {
-    power += powerDir * dt * 0.58; if (power > 1) { power = 1; powerDir = -1; } if (power < 0.12) { power = 0.12; powerDir = 1; } $('#power i').style.height = `${power * 100}%`;
+    if (coarsePointer) {
+      if (touchShotGesture.active) {
+        const held = Math.max(0, (performance.now() - touchShotGesture.startedAt) / 1000);
+        touchShotGesture.charge = THREE.MathUtils.clamp(0.45 + held * 0.68, 0.45, 1);
+        power = touchShotGesture.charge;
+      } else {
+        power = pendingTouchShot?.power ?? 0.5;
+      }
+    } else {
+      power += powerDir * dt * 0.58; if (power > 1) { power = 1; powerDir = -1; } if (power < 0.12) { power = 0.12; powerDir = 1; }
+    }
+    $('#power i').style.height = `${power * 100}%`;
     if (hitBuffer > 0) { hitBuffer = Math.max(0, hitBuffer - dt); if (playerHit()) hitBuffer = 0; }
     updatePlayer(dt); updateAI(dt); updateBall(dt);
     updateGameplayGuides({ THREE, guides: gameplayGuides, player, ai, ball, rallyLive, hitReach: PLAYER_TUNING.hitReach, maxHitHeight: PLAYER_TUNING.maxHitHeight, court: COURT, now: performance.now(), dt });
@@ -888,29 +924,96 @@ function setupEvents() {
   difficultySelect.addEventListener('change', () => { settings.difficulty = difficultySelect.value; localStorage.setItem('padelNovaDifficulty', settings.difficulty); });
   qualitySelect.addEventListener('change', () => { settings.quality = qualitySelect.value; localStorage.setItem('padelNovaQuality', settings.quality); applyQuality(); });
 
-  const stick = $('#touchStick'); const knob = stick.querySelector('i'); let pointerId = null;
-  const updateStick = (event) => {
-  const r = stick.getBoundingClientRect();
-  const dx = event.clientX - (r.left + r.width / 2);
-  const dy = event.clientY - (r.top + r.height / 2);
-  const max = r.width * 0.37;
-  const len = Math.hypot(dx, dy) || 1;
-  const clamped = Math.min(len, max);
-  const nx = dx / len;
-  const ny = dy / len;
-  const px = nx * clamped;
-  const py = ny * clamped;
-  const normalized = clamped / max;
-  const curve = joystickCurve(normalized);
-  knob.style.transform = `translate(${px}px,${py}px)`;
-  touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1);
-  touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
-};
-stick.addEventListener('pointerdown' , (event) => { pointerId = event.pointerId; stick.setPointerCapture(pointerId); updateStick(event); });
-  stick.addEventListener('pointermove', (event) => { if (event.pointerId === pointerId) updateStick(event); });
-  const clearStick = (event) => { if (pointerId !== null && (!event || event.pointerId === pointerId)) { pointerId = null; touchVector.x = touchVector.z = 0; knob.style.transform = 'translate(0,0)'; } };
-  stick.addEventListener('pointerup', clearStick); stick.addEventListener('pointercancel', clearStick);
-  $('#touchHit').addEventListener('pointerdown', (event) => { event.preventDefault(); hitBuffer = 0.32; if (playerHit()) hitBuffer = 0; });
+  const stick = $('#touchStick');
+  const knob = stick.querySelector('i');
+  const hitButton = $('#touchHit');
+  let movePointerId = null;
+  let stickCenter = { x: 0, y: 0 };
+
+  const placeFloatingStick = (x, y) => {
+    const size = stick.offsetWidth || 180;
+    const radius = size / 2;
+    const viewport = getViewportDimensions();
+    const safeX = THREE.MathUtils.clamp(x, radius + 10, Math.min(viewport.width * 0.52, viewport.width - radius - 10));
+    const safeY = THREE.MathUtils.clamp(y, radius + 10, viewport.height - radius - 10);
+    stickCenter = { x: safeX, y: safeY };
+    stick.style.left = `${safeX}px`;
+    stick.style.top = `${safeY}px`;
+    stick.style.right = 'auto';
+    stick.style.bottom = 'auto';
+    stick.classList.add('active');
+    knob.style.transform = 'translate(0,0)';
+    touchVector.x = touchVector.z = 0;
+  };
+
+  const updateFloatingStick = (event) => {
+    const max = (stick.offsetWidth || 180) * 0.37;
+    const dx = event.clientX - stickCenter.x;
+    const dy = event.clientY - stickCenter.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const clamped = Math.min(len, max);
+    const nx = dx / len;
+    const ny = dy / len;
+    const curve = joystickCurve(clamped / max);
+    knob.style.transform = `translate(${nx * clamped}px,${ny * clamped}px)`;
+    touchVector.x = THREE.MathUtils.clamp(nx * curve, -1, 1);
+    touchVector.z = THREE.MathUtils.clamp(ny * curve, -1, 1);
+  };
+
+  const clearFloatingStick = (event) => {
+    if (movePointerId === null || event && event.pointerId !== movePointerId) return;
+    movePointerId = null;
+    touchVector.x = touchVector.z = 0;
+    knob.style.transform = 'translate(0,0)';
+    stick.classList.remove('active');
+  };
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!coarsePointer || appMode !== 'playing' || movePointerId !== null || event.pointerType === 'mouse') return;
+    const viewport = getViewportDimensions();
+    if (event.clientX > viewport.width * 0.55 || event.target.closest('button,select,.scoreboard,.hud-actions')) return;
+    event.preventDefault();
+    movePointerId = event.pointerId;
+    placeFloatingStick(event.clientX, event.clientY);
+  }, { passive: false });
+  document.addEventListener('pointermove', (event) => { if (event.pointerId === movePointerId) { event.preventDefault(); updateFloatingStick(event); } }, { passive: false });
+  document.addEventListener('pointerup', clearFloatingStick);
+  document.addEventListener('pointercancel', clearFloatingStick);
+
+  const updateShotGesture = (event) => {
+    const dx = event.clientX - touchShotGesture.startX;
+    const dy = event.clientY - touchShotGesture.startY;
+    touchShotGesture.aim = THREE.MathUtils.clamp(dx / 92, -1, 1);
+    touchShotGesture.lob = THREE.MathUtils.clamp(-dy / 88, 0, 1);
+    hitButton.style.setProperty('--aim-x', `${touchShotGesture.aim * 18}px`);
+  };
+
+  hitButton.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    touchShotGesture = { active: true, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startedAt: performance.now(), aim: 0, lob: 0, charge: 0.45 };
+    hitButton.setPointerCapture?.(event.pointerId);
+    hitButton.classList.add('charging');
+  });
+  hitButton.addEventListener('pointermove', (event) => { if (touchShotGesture.active && event.pointerId === touchShotGesture.pointerId) updateShotGesture(event); });
+  const releaseShot = (event) => {
+    if (!touchShotGesture.active || event.pointerId !== touchShotGesture.pointerId) return;
+    updateShotGesture(event);
+    const held = Math.max(0, (performance.now() - touchShotGesture.startedAt) / 1000);
+    const shotPower = THREE.MathUtils.clamp(0.45 + held * 0.68, 0.45, 1);
+    pendingTouchShot = { power: shotPower, aim: touchShotGesture.aim, lob: touchShotGesture.lob };
+    touchShotGesture.active = false;
+    touchShotGesture.pointerId = null;
+    hitButton.classList.remove('charging');
+    hitButton.style.removeProperty('--aim-x');
+    hitBuffer = 0.42;
+    if (playerHit()) hitBuffer = 0;
+  };
+  hitButton.addEventListener('pointerup', releaseShot);
+  hitButton.addEventListener('pointercancel', (event) => {
+    if (touchShotGesture.active && event.pointerId === touchShotGesture.pointerId) {
+      touchShotGesture.active = false; touchShotGesture.pointerId = null; hitButton.classList.remove('charging'); hitButton.style.removeProperty('--aim-x');
+    }
+  });
 
   window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; $('#installApp').classList.remove('hidden'); });
   $('#installApp').addEventListener('click', async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $('#installApp').classList.add('hidden'); });
