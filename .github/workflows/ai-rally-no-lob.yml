@@ -1,0 +1,43 @@
+name: Validated AI rally trajectory update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-rally-no-lob.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Apply patch
+        run: python .github/scripts/ai_rally_patch.py
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate project
+        run: npm run check
+      - name: Validate AI rally profile
+        run: node --test tests/ai-shot.test.js
+      - name: Verify old slow rally formula removed
+        run: |
+          ! grep -q "\* level.power" src/main.js
+          grep -q "chooseAiRallyShot" src/main.js
+      - name: Commit validated update
+        run: |
+          git config user.name "cscarpatic"
+          git config user.email "146448687+cscarpatic@users.noreply.github.com"
+          git add src/main.js src/ai-shot.js tests/ai-shot.test.js
+          git commit -m "Replace repetitive AI lobs with realistic rally shots"
+          git push
